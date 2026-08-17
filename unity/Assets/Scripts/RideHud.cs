@@ -13,6 +13,7 @@ namespace KickrWorld
         public TrainerLink Link;
         public RideWorld World;
         public BridgeLauncher Launcher;
+        public RideMenu Menu;
 
         [Header("Profile strip")]
         public int ProfileWidth = 620;
@@ -30,6 +31,23 @@ namespace KickrWorld
             _pixel = new Texture2D(1, 1);
             _pixel.SetPixel(0, 0, Color.white);
             _pixel.Apply();
+
+            // The profile strip is baked from the course, so it has to be thrown
+            // away when the course changes or it keeps showing the old one.
+            if (World != null) World.RouteChanged += OnRouteChanged;
+        }
+
+        void OnDestroy()
+        {
+            if (World != null) World.RouteChanged -= OnRouteChanged;
+        }
+
+        void OnRouteChanged()
+        {
+            if (_profileTex != null) Destroy(_profileTex);
+            _profileTex = null;
+            _laps = 0;
+            _lastDistance = 0f;
         }
 
         void Update()
@@ -132,10 +150,10 @@ namespace KickrWorld
             float x = 18f;
             Stat(ref x, 10f, "POWER", live ? $"{t.power_w:F0}w" : "--");
             Stat(ref x, 10f, "CADENCE", live ? $"{t.cadence_rpm:F0}" : "--", 112f);
-            Stat(ref x, 10f, "SPEED", $"{Rider.SpeedMps * 3.6f:F1}");
+            Stat(ref x, 10f, $"SPEED {Units.SpeedSuffix}", $"{Units.Speed(Rider.SpeedMps):F1}");
             Stat(ref x, 10f, "GRADE", $"{gradePct:+0.0;-0.0;0.0}%");
-            Stat(ref x, 10f, "ELEV", $"{Rider.Elevation:F0}m", 150f);
-            Stat(ref x, 10f, "DIST", $"{Rider.Distance / 1000f:F2}km", 160f);
+            Stat(ref x, 10f, "ELEV", Units.ElevationText(Rider.Elevation), 150f);
+            Stat(ref x, 10f, "DIST", Units.DistanceText(Rider.Distance), 170f);
 
             // --- segment name ---
             GUI.Label(new Rect(18f, 88f, 520f, 26f), Rider.SegmentName, _segment);
@@ -156,8 +174,8 @@ namespace KickrWorld
                 Box(new Rect(px + frac * pw - 1f, py - 3f, 2f, ph + 6f), Color.white);
 
                 GUI.Label(new Rect(px, py + ph + 4f, pw, 20f),
-                    $"{World.Route.Length / 1000f:F1} km lap  ·  " +
-                    $"{World.Route.Profile.TotalAscent:F0} m of climbing", _small);
+                    $"{Units.Distance(World.Route.Length):F1} {Units.DistanceSuffix} lap  ·  " +
+                    $"{Units.ElevationText(World.Route.Profile.TotalAscent)} of climbing", _small);
             }
 
             DrawStatusPanel(t, live);
@@ -222,7 +240,10 @@ namespace KickrWorld
             float w = 640f;
             float h = showDetail ? 108f : 74f;
             float x = 18f;
-            float y = Screen.height - h - 14f;
+            // Sit above the menu button rather than under it. The menu reports how
+            // much room it needs, so this stays correct when the popup opens.
+            float menuRoom = Menu != null ? Menu.OccupiedHeight : 0f;
+            float y = Screen.height - h - 14f - menuRoom;
 
             Box(new Rect(x - 6f, y - 6f, w + 12f, h + 12f), new Color(0f, 0f, 0f, 0.62f));
 

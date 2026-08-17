@@ -220,23 +220,74 @@ namespace KickrWorld
 
         // --- heightmap ------------------------------------------------------
 
+        /// <summary>
+        /// Builds the heightmap a slice of rows at a time.
+        ///
+        /// Exists so the runtime Regenerate can spread the work across frames.
+        /// Doing it in one call freezes the app for several seconds on a laptop,
+        /// and the noise evaluation is far too large to hide.
+        /// </summary>
+        public class HeightmapBuilder
+        {
+            public readonly float[,] Heights;
+            public readonly int Rows;
+            public int Done { get; private set; }
+            public bool Complete => Done >= Rows;
+            public float Progress => Rows == 0 ? 1f : Done / (float)Rows;
+
+            readonly WorldSettings _s;
+            readonly float[,] _dist, _elev, _regional;
+            readonly int _regRes, _fres, _res;
+            readonly float _ox, _oz, _invSize, _texel;
+
+            public HeightmapBuilder(WorldSettings s, RoutePath route,
+                                    float[,] distField, float[,] elevField, int regRes = 128)
+            {
+                _s = s;
+                _dist = distField;
+                _elev = elevField;
+                _regRes = regRes;
+                _regional = BuildRegionalField(s, route, regRes);
+
+                _res = s.HeightmapResolution;
+                _fres = s.FieldResolution;
+                Rows = _res;
+                Heights = new float[_res, _res];
+
+                var rng = new System.Random(s.Seed);
+                _ox = (float)rng.NextDouble() * 1000f;
+                _oz = (float)rng.NextDouble() * 1000f;
+                _invSize = 1f / s.TerrainSize;
+                _texel = s.TerrainSize / (_res - 1);
+            }
+
+            /// <summary>Process up to <paramref name="rows"/> more rows.</summary>
+            public void Step(int rows)
+            {
+                int end = Mathf.Min(Done + rows, Rows);
+                FillRows(_s, Heights, _dist, _elev, _regional, _regRes,
+                         _fres, _res, _ox, _oz, _invSize, _texel, Done, end);
+                Done = end;
+            }
+
+            public void Finish() => Step(Rows - Done);
+        }
+
         public static float[,] BuildHeightmap(WorldSettings s, RoutePath route,
                                               float[,] distField, float[,] elevField)
         {
-            const int regRes = 128;
-            var regionalField = BuildRegionalField(s, route, regRes);
+            var builder = new HeightmapBuilder(s, route, distField, elevField);
+            builder.Finish();
+            return builder.Heights;
+        }
 
-            int res = s.HeightmapResolution;
-            int fres = s.FieldResolution;
-            var heights = new float[res, res];
-            var rng = new System.Random(s.Seed);
-            float ox = (float)rng.NextDouble() * 1000f;
-            float oz = (float)rng.NextDouble() * 1000f;
-
-            float invSize = 1f / s.TerrainSize;
-            float texel = s.TerrainSize / (res - 1);
-
-            for (int z = 0; z < res; z++)
+        static void FillRows(WorldSettings s, float[,] heights,
+                             float[,] distField, float[,] elevField,
+                             float[,] regionalField, int regRes,
+                             int fres, int res, float ox, float oz,
+                             float invSize, float texel, int zStart, int zEnd)
+        {
+            for (int z = zStart; z < zEnd; z++)
             {
                 float wz = z * texel;
                 for (int x = 0; x < res; x++)
@@ -298,7 +349,6 @@ namespace KickrWorld
                     heights[z, x] = Mathf.Clamp01(h / s.TerrainHeight);
                 }
             }
-            return heights;
         }
 
         // --- splatmap -------------------------------------------------------
@@ -326,7 +376,21 @@ namespace KickrWorld
                     float slope = 1f - Mathf.Clamp01(normal.y);
                     float d = Sample(distField, fres, u, v);
 
-                    float road = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((d - s.RoadWidth * 0.75f) / 9f));
+                    // The road terrain layer is deliberately left unpainted.
+                    //
+                    // The road is separate mesh geometry sitting proud of the
+                    // ground, so painting asphalt underneath it achieves nothing
+                    // visible -- and it actively hurts: the layer's texture
+                    // carries lane markings, and a terrain layer tiles every 8 m,
+                    // so any weight at all scatters white lines across the
+                    // landscape. The baked build never painted it (measured: max
+                    // weight 0.000) and looks correct, which is what tipped this
+                    // off when a runtime regenerate painted it properly and the
+                    // stripes appeared.
+                    //
+                    // The layer itself stays so the alphamap keeps four channels
+                    // and matches the baked asset's shape.
+                    const float road = 0f;
 
                     // Threshold starts at ~29 deg, not 37. Most mountainside here
                     // sits in the 30-40 deg band, and a higher threshold leaves it

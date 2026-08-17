@@ -27,6 +27,19 @@ namespace KickrWorld
 
         public RoutePath Route { get; private set; }
 
+        /// <summary>Raised after a regenerate, so anything caching route-derived
+        /// state (the HUD's elevation profile, for one) can rebuild it.</summary>
+        public event System.Action RouteChanged;
+
+        /// <summary>Swap in a new route. Used by the runtime regenerate; the
+        /// terrain must be rebuilt from the same settings or the road will float.</summary>
+        public void ApplyRoute(RoutePath route, int seed)
+        {
+            Seed = seed;
+            Route = route;
+            RouteChanged?.Invoke();
+        }
+
         public WorldSettings ToSettings() => new WorldSettings
         {
             TerrainSize = TerrainSize,

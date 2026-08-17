@@ -156,7 +156,8 @@ namespace KickrWorld.EditorTools
 
             var roadGo = new GameObject("Road");
             roadGo.transform.position = WorldGen.RoadMeshOrigin(route);
-            roadGo.AddComponent<MeshFilter>().sharedMesh = roadMesh;
+            var roadFilter = roadGo.AddComponent<MeshFilter>();
+            roadFilter.sharedMesh = roadMesh;
             roadGo.AddComponent<MeshRenderer>().sharedMaterial = MakeRoadMaterial();
 
             var world = new GameObject("World");
@@ -193,6 +194,16 @@ namespace KickrWorld.EditorTools
             hud.Link = link;
             hud.World = rideWorld;
             hud.Launcher = launcher;
+
+            var regen = world.AddComponent<WorldRegenerator>();
+            regen.World = rideWorld;
+            regen.Terrain = terrain;
+            regen.RoadMeshFilter = roadFilter;
+            regen.Rider = rider;
+
+            var menu = world.AddComponent<RideMenu>();
+            menu.Regenerator = regen;
+            hud.Menu = menu;
 
             var shot = world.AddComponent<AutoScreenshot>();
             shot.Rider = rider;

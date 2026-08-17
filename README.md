@@ -4,7 +4,7 @@ Ride a Wahoo KICKR through generated 3D terrain.
 
 ![VibeRide on the Hairpin descent](docs/screenshot.png)
 
-*Descending at 58.7 km/h on a -6.8% gradient. The elevation profile bottom-right
+*Descending at 61.3 km/h on a -6.3% gradient. The elevation profile bottom-right
 is coloured by gradient — green flat, amber rising, red brutal, blue descending —
 with the white marker showing position on the 25 km lap.*
 
@@ -12,10 +12,11 @@ Your trainer drives it: power and cadence come in over Bluetooth, a physics mode
 turns them into speed, and the road gradient goes back out to the trainer as FTMS
 simulation parameters — so the flywheel gets physically harder on the climbs.
 
-![Climbing Col de Carbon](docs/climb.png)
+![The menu, climbing Col de Carbon](docs/menu.png)
 
-*278 W at +8.0% on Col de Carbon, holding 14.4 km/h. Gradients are designed
-rather than emergent, so a climb is a climb every lap.*
+*318 W at +7.9% on Col de Carbon. The menu switches between metric and imperial,
+and **Regenerate** rebuilds the entire world — terrain, course and road — from a
+new seed at runtime, in about six seconds.*
 
 The app is **VibeRide**; the repository folder and the internal code namespaces
 (`KickrWorld` in C#, `kickr_bridge` in Python) still carry the original working
@@ -93,6 +94,32 @@ Work on the 3D side with no trainer present:
 ```bash
 cd bridge && .venv/Scripts/python.exe -m kickr_bridge.server --demo
 ```
+
+## In-app menu
+
+Bottom-left, or press **Escape**:
+
+| Control | What it does |
+| --- | --- |
+| Units | Metric / imperial, remembered between sessions |
+| Regenerate | New seed: rebuilds terrain, course and road live (~6 s) |
+| Exit | Quits, stopping the bridge on the way out |
+
+Everything internal stays SI — physics, course, wire protocol — and units are
+converted only when drawing text. Converting any earlier would mean two sources
+of truth for every number.
+
+Regeneration runs the same generator the editor bake uses; `WorldGen` lives in
+`Scripts` rather than `Editor` precisely so it can. The heightmap is spread over
+frames by `HeightmapBuilder`, because doing it in one call locks the app up for
+seconds with no way to show progress.
+
+> **The road terrain layer is deliberately never painted.** The road is separate
+> mesh geometry sitting proud of the ground, so asphalt underneath it is
+> invisible — and harmful: the layer's texture carries lane markings and terrain
+> layers tile every 8 m, so any weight at all scatters white lines across the
+> landscape. The baked build never painted it (measured max weight 0.000), which
+> is why this only appeared once a runtime regenerate painted it *correctly*.
 
 ## The world
 
