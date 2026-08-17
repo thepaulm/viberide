@@ -131,10 +131,234 @@ namespace KickrWorld
 
         public string NameAt(float distance) => _segments[IndexFor(Wrap(distance))].Name;
 
+        /// <summary>Steepest gradient anywhere on a generated course.</summary>
+        public const float MaxGrade = 0.13f;
+
+        /// <summary>Average metres climbed per metre ridden, kept in this band so
+        /// a lap is neither pancake-flat nor an unbroken wall.</summary>
+        public const float MinClimbRatio = 0.014f;
+        public const float MaxClimbRatio = 0.032f;
+
+        public float MaxAbsGrade()
+        {
+            float max = 0f;
+            foreach (var s in _segments)
+                max = Mathf.Max(max, Mathf.Max(Mathf.Abs(s.StartGrade), Mathf.Abs(s.EndGrade)));
+            return max;
+        }
+
+        /// <summary>Scale every gradient by k. Net elevation is preserved when it
+        /// is already zero, since scaling a sum of zero leaves it at zero.</summary>
+        void ScaleGrades(float k)
+        {
+            foreach (var s in _segments)
+            {
+                s.StartGrade *= k;
+                s.EndGrade *= k;
+            }
+            Bake();
+        }
+
         /// <summary>
-        /// The default course. Net elevation is deliberately zero so the loop
-        /// joins seamlessly -- you can ride it forever without a seam or a
-        /// teleport. Gradients are real-world rideable, nothing above 12%.
+        /// Append a closing stretch that cancels whatever net elevation has
+        /// accumulated, so the lap joins exactly and can be ridden forever.
+        ///
+        /// Three parts: a ramp in from the gradient we were on, a steady body,
+        /// and a ramp back to zero. Both ramps matter. Without the first, the
+        /// gradient steps the moment the closing segment starts; without the
+        /// second, it steps at the lap boundary where the course wraps back to
+        /// the flat roll-out. Either one feels like riding into a kerb.
+        ///
+        /// The body gradient is solved for rather than guessed, because the ramps
+        /// themselves contribute elevation and have to be part of the sum.
+        /// </summary>
+        void CloseTheLoop(string name, float entryGrade)
+        {
+            Bake();
+            float drift = NetElevation;
+
+            const float rampIn = 220f, rampOut = 220f, maxClosingGrade = 0.02f;
+            float body = 1200f;
+            float grade = 0f;
+
+            // rise = rampIn*(entry+g)/2 + body*g + rampOut*(g+0)/2 = -drift
+            for (int attempt = 0; attempt < 4; attempt++)
+            {
+                float numerator = -drift - rampIn * entryGrade * 0.5f;
+                float denominator = rampIn * 0.5f + body + rampOut * 0.5f;
+                grade = numerator / denominator;
+                if (Mathf.Abs(grade) <= maxClosingGrade) break;
+                // Too steep: lengthen the body so the same correction is gentler.
+                body = Mathf.Abs(numerator) / maxClosingGrade;
+            }
+
+            Add(new CourseSegment(name, rampIn, entryGrade, grade));
+            Add(new CourseSegment(name, body, grade, grade));
+            Add(new CourseSegment(name, rampOut, grade, 0f));
+            Bake();
+
+            // Mop up float error on the body, which leaves both ramps -- and so
+            // both joins -- untouched.
+            float residual = NetElevation;
+            var bodySeg = _segments[_segments.Count - 2];
+            float fix = -residual / bodySeg.LengthM;
+            bodySeg.StartGrade += fix;
+            bodySeg.EndGrade += fix;
+            // Keep the ramps meeting the body exactly after that nudge.
+            _segments[_segments.Count - 3].EndGrade = bodySeg.StartGrade;
+            _segments[_segments.Count - 1].StartGrade = bodySeg.EndGrade;
+            Bake();
+        }
+
+        static readonly string[] ClimbPrefix = { "Col de", "Mont", "Alto de", "Puerto de" };
+        static readonly string[] PlaceNames =
+        {
+            "Carbon", "Ardoise", "Brume", "Sable", "Pierre", "Nuage",
+            "Vireux", "Corbeau", "Solane", "Fresne", "Aubrac", "Verdon",
+        };
+        static readonly string[] WallNames =
+        {
+            "The Wall", "The Ramp", "The Kicker", "The Chimney", "The Step",
+        };
+        static readonly string[] FlatNames =
+        {
+            "Valley run", "River road", "False flat", "The plateau", "Long drag",
+        };
+
+        /// <summary>
+        /// Build a course from a seed.
+        ///
+        /// Constraints that make the result actually rideable, rather than merely
+        /// random: nothing steeper than 13%, gradient never steps discontinuously
+        /// (every feature is entered through a transition ramp), average climbing
+        /// held to a sane band, and net elevation exactly zero so the lap joins
+        /// seamlessly.
+        /// </summary>
+        public static CourseProfile CreateRandom(int seed)
+        {
+            var rng = new System.Random(seed);
+            float Range(float a, float b) => a + (float)rng.NextDouble() * (b - a);
+            int Pick(int n) => rng.Next(n);
+
+            var c = new CourseProfile();
+            float prevGrade = 0f;
+            float running = 0f;   // metres of elevation accumulated so far
+
+            // Every feature is entered via a short ramp from whatever gradient we
+            // were on. Without this the joins step instantly, which on a real
+            // trainer feels like riding into a kerb.
+            void Feature(string name, float length, float g0, float g1)
+            {
+                g0 = Mathf.Clamp(g0, -MaxGrade, MaxGrade);
+                g1 = Mathf.Clamp(g1, -MaxGrade, MaxGrade);
+                float ramp = Mathf.Min(200f, length * 0.3f);
+                if (ramp > 25f && Mathf.Abs(g0 - prevGrade) > 0.004f)
+                {
+                    c.Add(new CourseSegment(name, ramp, prevGrade, g0));
+                    running += ramp * (prevGrade + g0) * 0.5f;
+                    length -= ramp;
+                }
+                float body = Mathf.Max(length, 50f);
+                c.Add(new CourseSegment(name, body, g0, g1));
+                running += body * (g0 + g1) * 0.5f;
+                prevGrade = g1;
+            }
+
+            Feature("Neutral roll-out", Range(900f, 1800f), 0f, 0f);
+
+            int climbs = 2 + Pick(3);          // 2-4 climbs
+            var usedNames = new System.Collections.Generic.HashSet<string>();
+
+            for (int i = 0; i < climbs; i++)
+            {
+                float elevationBefore = running;
+
+                // Approach: gentle rise or rolling ground before the real climb.
+                Feature(FlatNames[Pick(FlatNames.Length)], Range(600f, 2000f),
+                        Range(-0.01f, 0.015f), Range(-0.005f, 0.02f));
+
+                // Occasional short wall, steeper than the climb it precedes.
+                if (rng.NextDouble() < 0.45)
+                {
+                    Feature(WallNames[Pick(WallNames.Length)], Range(350f, 800f),
+                            Range(0.085f, 0.10f), Range(0.10f, MaxGrade));
+                    Feature("Recovery shelf", Range(300f, 700f), Range(0.015f, 0.04f), Range(0.02f, 0.045f));
+                }
+
+                string name;
+                int guard = 0;
+                do
+                {
+                    name = $"{ClimbPrefix[Pick(ClimbPrefix.Length)]} {PlaceNames[Pick(PlaceNames.Length)]}";
+                } while (!usedNames.Add(name) && ++guard < 16);
+
+                // Split longer climbs so the gradient can build toward the top,
+                // which is what makes a climb feel like it has a story.
+                float total = Range(1400f, 5200f);
+                float lower = Range(0.04f, 0.07f);
+                float upper = Mathf.Clamp(lower + Range(0.005f, 0.03f), 0.04f, 0.105f);
+                if (total > 2600f)
+                {
+                    Feature(name, total * 0.55f, lower, (lower + upper) * 0.5f);
+                    Feature($"{name} (upper)", total * 0.45f, (lower + upper) * 0.5f, upper);
+                }
+                else
+                {
+                    Feature(name, total, lower, upper);
+                }
+
+                Feature("Summit", Range(150f, 450f), Range(0.005f, 0.025f), 0f);
+
+                // Size the descent against what this climb actually gained,
+                // rather than picking a length at random. Guessing left most of
+                // the climbing uncancelled, and the loop-closer then had to
+                // absorb it -- on one seed that made the closing stretch 13 km of
+                // a 25 km lap, half the ride spent on one gentle false descent.
+                float gained = running - elevationBefore;
+                float dg0 = -Range(0.045f, 0.085f);
+                float dg1 = -Range(0.03f, 0.065f);
+                float avgDescent = Mathf.Abs((dg0 + dg1) * 0.5f);
+                float drop = Mathf.Max(0f, gained) * Range(0.88f, 1.0f);
+                float descentLength = Mathf.Clamp(drop / Mathf.Max(avgDescent, 0.005f), 700f, 9000f);
+
+                // Break a long descent in two, steeper up top easing off lower
+                // down, the same way the climbs are split. A single unbroken
+                // gradient for a third of the lap is monotonous to ride, and a
+                // real mountain descent does not hold one angle the whole way.
+                if (descentLength > 2600f)
+                {
+                    float mid = (dg0 + dg1) * 0.5f;
+                    Feature($"{name} descent", descentLength * 0.55f, dg0, mid);
+                    Feature($"{name} descent (lower)", descentLength * 0.45f, mid, dg1);
+                }
+                else
+                {
+                    Feature($"{name} descent", descentLength, dg0, dg1);
+                }
+            }
+
+            c.CloseTheLoop(FlatNames[Pick(FlatNames.Length)], prevGrade);
+
+            // Nudge the overall climbing into a sensible band. Scaling every
+            // gradient by the same factor keeps net elevation at zero.
+            float ratio = c.TotalAscent / Mathf.Max(1f, c.TotalLength);
+            if (ratio > 0.0001f)
+            {
+                float target = Mathf.Clamp(ratio, MinClimbRatio, MaxClimbRatio);
+                float k = target / ratio;
+                // Never scale a gradient past the ceiling.
+                float maxAbs = c.MaxAbsGrade();
+                if (maxAbs * k > MaxGrade) k = MaxGrade / Mathf.Max(maxAbs, 0.0001f);
+                if (Mathf.Abs(k - 1f) > 0.01f) c.ScaleGrades(k);
+            }
+
+            c.Bake();
+            return c;
+        }
+
+        /// <summary>
+        /// The original hand-designed course. Kept as a reference and a fallback;
+        /// worlds now generate their course from the seed instead.
         /// </summary>
         public static CourseProfile CreateDefault()
         {

@@ -130,24 +130,60 @@ with real gradients, the terrain is generated *around* it, and grade comes from
 the analytic derivative of the profile. Gradients are therefore exact and
 tunable rather than emergent.
 
-Current course — **25.02 km lap, 545 m of climbing, net 0.00 m**:
+The course is **generated from the seed**, so Regenerate gives a genuinely
+different ride rather than the same climbs under new scenery.
 
-| Segment | Length | Gradient |
-| --- | --- | --- |
-| Neutral roll-out | 1.4 km | 0% |
-| River road | 1.9 km | 0 → 2% |
-| Rolling hills | 2.3 km | ±3% |
-| The Wall | 0.7 km | 9 → 12% |
-| Recovery shelf | 0.6 km | 3% |
-| Col de Carbon | 5.6 km | 6 → 9% |
-| Hairpin descent | 4.7 km | −7 → −4% |
-| Long valley descent | 5.6 km | −5% |
-| Valley run | 1.9 km | flat |
+![A regenerated four-climb course](docs/course.png)
 
-Net elevation is forced to exactly zero so the lap joins seamlessly — you can
-ride it indefinitely with no seam and no teleport. Lengths are scaled to the
-loop's measured arc length; gradients are preserved, since gradient is what
-determines how it feels.
+*A different seed: four climbs instead of three, visible in the profile strip.
+Terrain, road and course are all rebuilt together.*
+
+A typical lap:
+
+```
+Neutral roll-out       1.01 km   0.0% ->  0.0%
+Long drag              0.78 km   0.0% -> +0.1%
+The Step               0.28 km  +0.1% -> +12.9%
+Recovery shelf         0.22 km +12.9% -> +3.9%
+Col de Verdon          1.25 km  +3.9% -> +6.1%
+Col de Verdon (upper)  1.02 km  +6.1% -> +7.3%
+Summit                 0.12 km  +7.3% ->  0.0%
+Col de Verdon descent  1.67 km   0.0% -> -5.5%
+... 2 more climbs, then the loop closes
+```
+
+Constraints that make a random course actually rideable, rather than merely
+random — all enforced and checked, not hoped for:
+
+| Rule | Why |
+| --- | --- |
+| Net elevation exactly zero | the lap joins seamlessly; ride it forever, no teleport |
+| Nothing over 13% | above that it stops being a bike ride |
+| Gradient never steps | a discontinuity feels like riding into a kerb |
+| Climbing held to a band | neither pancake-flat nor an unbroken wall |
+| No feature over ~⅓ of the lap | one gradient for that long is monotonous |
+
+**VibeRide → Audit Course Generator** generates 300 courses and checks every one.
+A generator that produces a good course for the seed you happened to try is
+worth very little, since Regenerate hands the rider an arbitrary seed each time.
+Current results:
+
+```
+ascent      396 - 673 m (mean 560)
+worst net   0.000 m
+steepest    13.0% (ceiling 13%)
+worst step  0.400% between segments
+longest     18% of the lap in one feature
+FAILURES    0
+```
+
+Both remaining rules were added *because* the audit caught real defects: gradient
+steps of 6.58% where the loop-closing segment was appended without a ramp, and a
+seed that spent 13 km of a 25 km lap on one false flat because descents were
+sized at random instead of against the climb they follow.
+
+Lengths are scaled to the loop's measured arc length; gradients are preserved,
+since gradient is what determines how a climb feels.
 
 Rebuild the world (regenerates terrain, road and scene from `WorldSettings`):
 

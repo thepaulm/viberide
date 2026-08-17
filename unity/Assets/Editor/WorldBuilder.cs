@@ -62,7 +62,10 @@ namespace KickrWorld.EditorTools
             var route = WorldGen.BuildRoute(settings);
             var profile = route.Profile;
             Log($"  lap {route.Length / 1000f:F2} km, ascent {profile.TotalAscent:F0} m, " +
-                $"net {profile.NetElevation:F2} m");
+                $"net {profile.NetElevation:F2} m, steepest {profile.MaxAbsGrade() * 100f:F1}%, " +
+                $"{profile.Segments.Count} segments");
+            foreach (var name in DistinctSegmentNames(profile))
+                Log($"    - {name}");
 
             Log("Building road distance field...");
             WorldGen.BuildRoadField(settings, route, out var distField, out var elevField);
@@ -221,6 +224,39 @@ namespace KickrWorld.EditorTools
         }
 
         static void Log(string msg) => Debug.Log($"[WorldBuilder] {msg}");
+
+        /// <summary>Collapse the transition/body segment pairs into one line per
+        /// named feature, with its length and gradient range.</summary>
+        static System.Collections.Generic.List<string> DistinctSegmentNames(CourseProfile profile)
+        {
+            var lines = new System.Collections.Generic.List<string>();
+            string current = null;
+            float length = 0f, lo = 0f, hi = 0f;
+
+            void Flush()
+            {
+                if (current == null) return;
+                lines.Add($"{current,-28} {length / 1000f:F2} km  " +
+                          $"{lo * 100f:+0.0;-0.0;0.0}% to {hi * 100f:+0.0;-0.0;0.0}%");
+            }
+
+            foreach (var s in profile.Segments)
+            {
+                if (s.Name != current)
+                {
+                    Flush();
+                    current = s.Name;
+                    length = 0f;
+                    lo = Mathf.Min(s.StartGrade, s.EndGrade);
+                    hi = Mathf.Max(s.StartGrade, s.EndGrade);
+                }
+                length += s.LengthM;
+                lo = Mathf.Min(lo, Mathf.Min(s.StartGrade, s.EndGrade));
+                hi = Mathf.Max(hi, Mathf.Max(s.StartGrade, s.EndGrade));
+            }
+            Flush();
+            return lines;
+        }
 
         /// <summary>
         /// Fail the build if any component failed to resolve to a script.

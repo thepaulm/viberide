@@ -84,7 +84,9 @@ namespace KickrWorld
             float radius = s.TerrainSize * s.RouteRadiusFraction;
             var loop = RoutePath.BuildLoop(center, radius, 4096, s.Seed);
 
-            var profile = CourseProfile.CreateDefault();
+            // Seed-driven, so Regenerate gives a genuinely different ride rather
+            // than the same climbs draped over new scenery.
+            var profile = CourseProfile.CreateRandom(s.Seed);
 
             // Measure the loop's true arc length, then stretch the elevation
             // profile onto it. Gradients survive; only lengths change. Doing it
