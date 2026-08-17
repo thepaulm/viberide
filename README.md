@@ -2,6 +2,21 @@
 
 Ride a Wahoo KICKR through generated 3D terrain.
 
+![VibeRide on the Hairpin descent](docs/screenshot.png)
+
+*Descending at 58.7 km/h on a -6.8% gradient. The elevation profile bottom-right
+is coloured by gradient — green flat, amber rising, red brutal, blue descending —
+with the white marker showing position on the 25 km lap.*
+
+Your trainer drives it: power and cadence come in over Bluetooth, a physics model
+turns them into speed, and the road gradient goes back out to the trainer as FTMS
+simulation parameters — so the flywheel gets physically harder on the climbs.
+
+![Climbing Col de Carbon](docs/climb.png)
+
+*278 W at +8.0% on Col de Carbon, holding 14.4 km/h. Gradients are designed
+rather than emergent, so a climb is a climb every lap.*
+
 The app is **VibeRide**; the repository folder and the internal code namespaces
 (`KickrWorld` in C#, `kickr_bridge` in Python) still carry the original working
 name. Renaming those is a mechanical but wide change and was left alone
@@ -155,13 +170,28 @@ a screenshot. Watch these:
 - **`splat coverage`** — mean weight per terrain layer, logged both as computed
   and as read back from the asset.
 
-### Known limitation: batchmode captures
+### Screenshots
 
-`SceneCapture` renders stills headlessly, but **batchmode only renders terrain
-layer 0**, so rock and snow never appear in them regardless of the alphamap.
-Verified by forcing the splatmap to 100% rock and getting a pixel-identical green
-frame. Geometry, road, lighting and layout in those stills are faithful; ground
-texturing is not. Judge texturing by opening the scene in the editor.
+For a real screenshot, run the built player with `-screenshot`. It uses
+`ScreenCapture` on the game's own framebuffer, so nothing on the desktop can leak
+in and the result is correct even if the window is occluded:
+
+```bash
+VibeRide.exe -screen-width 1920 -screen-height 1080 -screenshot C:\path\shot.png -startdistance 12830 -shotdelay 24 -shotquit
+```
+
+`-startdistance` jumps the rider to a point on the course, which beats pedalling
+10 km to reach the interesting bit. Start a demo bridge first
+(`run_bridge.sh --demo`) and the player will defer to it, so the HUD shows live
+numbers instead of "trainer not found".
+
+**`SceneCapture`'s headless stills are not representative.** Batchmode renders
+only terrain layer 0, so rock and snow never appear in them regardless of the
+alphamap — verified by forcing the splatmap to 100% rock and getting a
+pixel-identical green frame. That is a limitation of headless rendering, **not**
+of the terrain: a real player renders all four layers correctly, as the
+screenshots at the top of this file show. Use headless stills to check geometry
+and layout; use a player screenshot to judge how it actually looks.
 
 ## Running on macOS
 

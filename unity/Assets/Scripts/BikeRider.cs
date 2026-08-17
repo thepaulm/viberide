@@ -48,6 +48,14 @@ namespace KickrWorld
             _fallback = new FallbackRideModel();
         }
 
+        /// <summary>Move the rider to a point on the course. Useful for going
+        /// straight to a climb without pedalling 10 km to get there.</summary>
+        public void Jump(float distanceMetres)
+        {
+            var route = _world != null ? _world.Route : null;
+            _distance = route != null ? route.Wrap(distanceMetres) : distanceMetres;
+        }
+
         void Update()
         {
             var route = _world.Route;

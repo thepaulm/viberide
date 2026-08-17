@@ -145,9 +145,14 @@ namespace KickrWorld.EditorTools
             terrain.heightmapPixelError = 4f;
             terrain.basemapDistance = 2000f;
             terrain.detailObjectDistance = 200f;
-            // Deliberately NOT setting materialTemplate. A hand-made material with
-            // the terrain shader comes up without the keywords Unity's own terrain
-            // material sets, and renders only the first splat layer.
+
+            // Assign an explicit terrain material asset. Relying on Unity's
+            // built-in default works in the editor, but a built player showed the
+            // terrain rendering as a single layer -- consistent with the terrain
+            // shader's multi-layer variants being stripped because nothing in the
+            // build referenced them. A real material asset in the scene is a hard
+            // reference, so the variants survive.
+            terrain.materialTemplate = MakeTerrainMaterial();
 
             var roadGo = new GameObject("Road");
             roadGo.transform.position = WorldGen.RoadMeshOrigin(route);
@@ -188,6 +193,9 @@ namespace KickrWorld.EditorTools
             hud.Link = link;
             hud.World = rideWorld;
             hud.Launcher = launcher;
+
+            var shot = world.AddComponent<AutoScreenshot>();
+            shot.Rider = rider;
 
             BuildLighting();
             AssertNoMissingScripts();
@@ -407,6 +415,19 @@ namespace KickrWorld.EditorTools
         }
 
         // --- materials & textures -------------------------------------------
+
+        static Material MakeTerrainMaterial()
+        {
+            var shader = Shader.Find("Nature/Terrain/Standard");
+            if (shader == null)
+            {
+                Debug.LogWarning("[WorldBuilder] terrain shader not found; using Unity's default.");
+                return null;
+            }
+            var mat = new Material(shader) { name = "TerrainMat" };
+            AssetDatabase.CreateAsset(mat, $"{GenDir}/TerrainMat.mat");
+            return mat;
+        }
 
         static Material MakeRoadMaterial()
         {
