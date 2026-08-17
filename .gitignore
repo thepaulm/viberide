@@ -1,0 +1,41 @@
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+bridge/server.out
+bridge/server.err
+
+# --- Unity: caches and per-user state ---
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]serSettings/
+unity/[Mm]emoryCaptures/
+unity/[Rr]ecordings/
+*.csproj
+*.sln
+*.user
+
+# --- Generated world ---
+# Everything here is a build artefact, reproduced exactly from WorldSettings by
+# "VibeRide > Build World Scene" (or the BuildAll* command-line methods). The
+# terrain asset alone is ~10 MB of binary that changes on every regenerate, so
+# committing it would bloat history quickly for no benefit.
+#
+# After cloning, run the world builder once before opening the Ride scene.
+unity/Assets/Generated/
+unity/Assets/Generated.meta
+unity/Assets/Scenes/
+unity/Assets/Scenes.meta
+
+# --- Build output and debugging artefacts ---
+unity/Captures/
+*.log
+VibeRide-mac-*.zip
+KickrWorld-mac-*.zip
+report
+report-*
+crash-*.txt

@@ -1,0 +1,418 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace KickrWorld
+{
+    public class WorldSettings
+    {
+        public float TerrainSize = 10000f;
+        // Road tops out near 1105 m and peaks add ~1450 m on top, so the ceiling
+        // must clear ~2600 m or Clamp01 shears the summits into flat mesas.
+        public float TerrainHeight = 2800f;
+
+        // 2049, not 4097. A 4097 heightmap is 16.8M samples, and between the CPU
+        // copy, the GPU texture and Unity's LOD structures it crashed an 8 GB
+        // MacBook Air on launch (data abort in __bzero, kernel reporting memory
+        // shortage). It ran fine on a 65 GB desktop, which is exactly why it was
+        // not caught here. 2049 is 4x cheaper and gives 4.9 m per texel, which is
+        // plenty since the road is separate geometry.
+        public int HeightmapResolution = 2049;   // must be 2^n + 1
+        public int FieldResolution = 2049;       // road distance field, upsampled
+        public float RouteRadiusFraction = 0.34f;
+
+        // The road sits well above the valley floor so the ground has somewhere
+        // to fall away to. Without this headroom the terrain clamps at zero and
+        // you get flat basins instead of valleys.
+        public float BaseElevation = 560f;
+
+        // How far out the terrain is allowed to reach full independent relief.
+        // Keep this tight: a wide corridor makes the landscape follow the road,
+        // which renders a 545 m climb completely invisible because everything
+        // around you rises with you.
+        // Tight, because everything between the bench and this radius is a
+        // relief-suppressed transition -- and that zone is most of what fills the
+        // screen from the saddle. Too wide and every ride is down a green runway.
+        public float CorridorRadius = 120f;
+        public float BenchRadius = 18f;          // fully flattened road bench
+
+        // Terrain is cut slightly below the road surface. Discretisation of the
+        // distance field means the ground would otherwise poke up through the
+        // road ribbon on steep curves.
+        public float BenchSink = 0.6f;
+
+        public float RoadWidth = 7.5f;
+        public int Seed = 20260816;
+    }
+
+    public static class WorldGen
+    {
+        // --- noise ----------------------------------------------------------
+
+        static float Fbm(float x, float z, int octaves, float frequency, float lacunarity, float gain)
+        {
+            float sum = 0f, amp = 1f, norm = 0f, f = frequency;
+            for (int i = 0; i < octaves; i++)
+            {
+                sum += amp * (Mathf.PerlinNoise(x * f, z * f) - 0.5f) * 2f;
+                norm += amp;
+                amp *= gain;
+                f *= lacunarity;
+            }
+            return sum / Mathf.Max(norm, 0.0001f);
+        }
+
+        /// <summary>Ridged noise -- gives sharp mountain crests instead of blobs.</summary>
+        static float Ridged(float x, float z, int octaves, float frequency, float lacunarity, float gain)
+        {
+            float sum = 0f, amp = 1f, norm = 0f, f = frequency;
+            for (int i = 0; i < octaves; i++)
+            {
+                float n = 1f - Mathf.Abs((Mathf.PerlinNoise(x * f, z * f) - 0.5f) * 2f);
+                sum += amp * n * n;
+                norm += amp;
+                amp *= gain;
+                f *= lacunarity;
+            }
+            return sum / Mathf.Max(norm, 0.0001f);
+        }
+
+        // --- route ----------------------------------------------------------
+
+        public static RoutePath BuildRoute(WorldSettings s)
+        {
+            var center = new Vector2(s.TerrainSize * 0.5f, s.TerrainSize * 0.5f);
+            float radius = s.TerrainSize * s.RouteRadiusFraction;
+            var loop = RoutePath.BuildLoop(center, radius, 4096, s.Seed);
+
+            var profile = CourseProfile.CreateDefault();
+
+            // Measure the loop's true arc length, then stretch the elevation
+            // profile onto it. Gradients survive; only lengths change. Doing it
+            // this way means the road never has to stretch or pinch to fit.
+            float arc = 0f;
+            for (int i = 0; i < loop.Length; i++)
+                arc += Vector2.Distance(loop[i], loop[(i + 1) % loop.Length]);
+            profile.ScaleToLength(arc);
+
+            return new RoutePath(loop, profile, s.BaseElevation);
+        }
+
+        // --- road distance field -------------------------------------------
+
+        /// <summary>
+        /// Scatter the route into a grid of (distance to road, road elevation).
+        /// Scatter rather than gather: stamping ~1500 route samples into a local
+        /// neighbourhood is orders of magnitude cheaper than asking every one of
+        /// four million texels which road point is nearest.
+        /// </summary>
+        public static void BuildRoadField(WorldSettings s, RoutePath route, out float[,] dist, out float[,] elev)
+        {
+            int res = s.FieldResolution;
+            float texel = s.TerrainSize / (res - 1);
+            dist = new float[res, res];
+            elev = new float[res, res];
+
+            float far = s.CorridorRadius * 2f;
+            for (int i = 0; i < res; i++)
+                for (int j = 0; j < res; j++)
+                    dist[i, j] = far;
+
+            int stampRadius = Mathf.CeilToInt(s.CorridorRadius / texel);
+            float step = Mathf.Max(texel * 0.75f, 6f);
+            int samples = Mathf.CeilToInt(route.Length / step);
+
+            for (int k = 0; k < samples; k++)
+            {
+                float d = k * step;
+                Vector2 p = route.HorizontalAt(d);
+                float e = route.ElevationAt(d);
+
+                int cx = Mathf.RoundToInt(p.x / texel);
+                int cz = Mathf.RoundToInt(p.y / texel);
+
+                for (int dz = -stampRadius; dz <= stampRadius; dz++)
+                {
+                    int z = cz + dz;
+                    if (z < 0 || z >= res) continue;
+                    for (int dx = -stampRadius; dx <= stampRadius; dx++)
+                    {
+                        int x = cx + dx;
+                        if (x < 0 || x >= res) continue;
+
+                        float wx = x * texel - p.x;
+                        float wz = z * texel - p.y;
+                        float dd = Mathf.Sqrt(wx * wx + wz * wz);
+                        if (dd < dist[z, x])
+                        {
+                            dist[z, x] = dd;
+                            elev[z, x] = e;
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// A smooth elevation trend covering the WHOLE map, derived from the route.
+        ///
+        /// This exists because the road distance field is only populated near the
+        /// road. Using it as the terrain base everywhere puts the rest of the map
+        /// at zero, which clamps a quarter of the terrain flat. The landscape needs
+        /// a base elevation that is defined everywhere and still agrees with the
+        /// road where they meet.
+        ///
+        /// Inverse-distance weighting gives that directly: near the road it tends
+        /// to the local road height, far away it blends between the nearer parts of
+        /// the loop, and it is smooth by construction so no separate blur is needed.
+        /// Because it is a smoothed trend, summits sit above it and valleys below --
+        /// which is exactly the "you are up on a pass" look we want.
+        /// </summary>
+        public static float[,] BuildRegionalField(WorldSettings s, RoutePath route, int res = 128)
+        {
+            int samples = 1400;
+            var pts = new Vector2[samples];
+            var els = new float[samples];
+            for (int k = 0; k < samples; k++)
+            {
+                float d = (k / (float)samples) * route.Length;
+                pts[k] = route.HorizontalAt(d);
+                els[k] = route.ElevationAt(d);
+            }
+
+            var field = new float[res, res];
+            float texel = s.TerrainSize / (res - 1);
+            // Softening term stops the weight blowing up on top of a sample and
+            // sets the scale over which the trend stays local (~200 m).
+            const float soften = 200f * 200f;
+
+            for (int z = 0; z < res; z++)
+            {
+                float wz = z * texel;
+                for (int x = 0; x < res; x++)
+                {
+                    float wx = x * texel;
+                    float wsum = 0f, esum = 0f;
+                    for (int k = 0; k < samples; k++)
+                    {
+                        float dx = wx - pts[k].x, dz = wz - pts[k].y;
+                        float d2 = dx * dx + dz * dz + soften;
+                        float w = 1f / (d2 * d2);   // inverse 4th power -> nearby road dominates
+                        wsum += w;
+                        esum += els[k] * w;
+                    }
+                    field[z, x] = esum / wsum;
+                }
+            }
+            return field;
+        }
+
+        static float Sample(float[,] grid, int res, float u, float v)
+        {
+            float fx = Mathf.Clamp(u * (res - 1), 0f, res - 1.001f);
+            float fz = Mathf.Clamp(v * (res - 1), 0f, res - 1.001f);
+            int x0 = (int)fx, z0 = (int)fz;
+            int x1 = Mathf.Min(x0 + 1, res - 1), z1 = Mathf.Min(z0 + 1, res - 1);
+            float tx = fx - x0, tz = fz - z0;
+            float a = Mathf.Lerp(grid[z0, x0], grid[z0, x1], tx);
+            float b = Mathf.Lerp(grid[z1, x0], grid[z1, x1], tx);
+            return Mathf.Lerp(a, b, tz);
+        }
+
+        // --- heightmap ------------------------------------------------------
+
+        public static float[,] BuildHeightmap(WorldSettings s, RoutePath route,
+                                              float[,] distField, float[,] elevField)
+        {
+            const int regRes = 128;
+            var regionalField = BuildRegionalField(s, route, regRes);
+
+            int res = s.HeightmapResolution;
+            int fres = s.FieldResolution;
+            var heights = new float[res, res];
+            var rng = new System.Random(s.Seed);
+            float ox = (float)rng.NextDouble() * 1000f;
+            float oz = (float)rng.NextDouble() * 1000f;
+
+            float invSize = 1f / s.TerrainSize;
+            float texel = s.TerrainSize / (res - 1);
+
+            for (int z = 0; z < res; z++)
+            {
+                float wz = z * texel;
+                for (int x = 0; x < res; x++)
+                {
+                    float wx = x * texel;
+                    float u = wx * invSize, v = wz * invSize;
+
+                    float d = Sample(distField, fres, u, v);
+                    float roadE = Sample(elevField, fres, u, v);
+
+                    float benchEdge = s.BenchRadius * 2.2f;
+                    // Flat bench right at the road, fading out quickly.
+                    float bench = 1f - Mathf.SmoothStep(0f, 1f,
+                        Mathf.Clamp01((d - s.BenchRadius) / (benchEdge - s.BenchRadius)));
+                    // Relief grows in from the bench edge to full strength.
+                    float reliefAmp = Mathf.SmoothStep(0f, 1f,
+                        Mathf.InverseLerp(benchEdge, s.CorridorRadius, d));
+
+                    float nx = wx + ox, nz = wz + oz;
+
+                    // Four scales, largest to smallest. Terrain that only has
+                    // low frequencies reads as smooth green pudding no matter
+                    // how tall it is -- the mid and fine octaves are what make
+                    // it look like rock rather than fabric.
+
+                    // Regional: broad highlands and basins, ~4 km wavelength.
+                    float regional = Fbm(nx + 3000f, nz - 2000f, 3, 0.00022f, 2.0f, 0.5f);
+
+                    // Mask kept broad and smooth so crests form connected ranges.
+                    // A tight mask produces isolated cones sitting on a plain.
+                    float mask = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(-0.45f, 0.35f, regional));
+
+                    // Fewer octaves and a faster falloff than feels natural to
+                    // write: ridged noise carries a lot of high-frequency energy
+                    // and stacking it produces needle spikes rather than peaks.
+                    float crests = Ridged(nx, nz, 5, 0.00042f, 2.07f, 0.48f);
+                    float peaks = crests * crests * 1450f * mask;
+
+                    // Gain above 0.5 deliberately, to keep energy in the 100-300 m
+                    // band. That is the scale the rider actually sees from the
+                    // saddle, and without it the roadside reads as a flat lawn.
+                    float mid = Fbm(nx + 811f, nz - 517f, 5, 0.0016f, 2.11f, 0.62f) * 90f;
+                    float fine = Fbm(nx - 233f, nz + 97f, 3, 0.0075f, 2.0f, 0.5f) * 11f;
+                    // ~30 m wavelength, just above what a 2.44 m heightmap texel
+                    // can resolve. Stops slopes reading as smooth moulded plastic.
+                    float grain = Fbm(nx + 57f, nz - 91f, 2, 0.033f, 2.0f, 0.5f) * 3.5f;
+
+                    // Signed, with a negative bias so the average ground sits
+                    // below road level and the land falls away from the route.
+                    float relief = regional * 300f + peaks + mid + fine + grain - 120f;
+
+                    // Landscape is built on the regional trend, which is defined
+                    // across the whole map. Near the road we blend to the exact
+                    // road elevation so the two always meet cleanly.
+                    float landscape = Sample(regionalField, regRes, u, v) + relief;
+                    float h = Mathf.Lerp(roadE, landscape, reliefAmp);
+                    h = Mathf.Lerp(h, roadE - s.BenchSink, bench);
+
+                    heights[z, x] = Mathf.Clamp01(h / s.TerrainHeight);
+                }
+            }
+            return heights;
+        }
+
+        // --- splatmap -------------------------------------------------------
+
+        /// <summary>
+        /// Four layers: asphalt near the road, grass on gentle ground, rock on
+        /// anything steep, snow up high. Driven by slope and altitude so the
+        /// mountains read correctly without hand painting.
+        /// </summary>
+        public static float[,,] BuildSplatmap(WorldSettings s, TerrainData data,
+                                              float[,] distField, int res = 512)
+        {
+            int fres = s.FieldResolution;
+            var map = new float[res, res, 4];
+
+            for (int z = 0; z < res; z++)
+            {
+                float v = z / (float)(res - 1);
+                for (int x = 0; x < res; x++)
+                {
+                    float u = x / (float)(res - 1);
+
+                    float height = data.GetInterpolatedHeight(u, v);
+                    Vector3 normal = data.GetInterpolatedNormal(u, v);
+                    float slope = 1f - Mathf.Clamp01(normal.y);
+                    float d = Sample(distField, fres, u, v);
+
+                    float road = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((d - s.RoadWidth * 0.75f) / 9f));
+
+                    // Threshold starts at ~29 deg, not 37. Most mountainside here
+                    // sits in the 30-40 deg band, and a higher threshold leaves it
+                    // rendering as grass with a faint grey wash instead of rock.
+                    float rockSlope = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.12f, 0.38f, slope));
+                    // Bare rock above the treeline regardless of steepness.
+                    float rockAlt = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1100f, 1500f, height));
+                    float rock = Mathf.Clamp01(Mathf.Max(rockSlope, rockAlt * 0.85f));
+
+                    // Snow line above the highest road point (~1105 m) so summits
+                    // read as high country without icing the route. Scaled down on
+                    // steep faces -- snow does not sit on a cliff.
+                    float snow = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1250f, 1650f, height))
+                                 * (1f - Mathf.Clamp01(slope * 1.6f));
+                    float grass = Mathf.Max(0f, 1f - rock - snow);
+
+                    // Road wins outright where it exists.
+                    grass *= 1f - road; rock *= 1f - road; snow *= 1f - road;
+
+                    float sum = grass + rock + snow + road;
+                    if (sum < 0.0001f) { grass = 1f; sum = 1f; }
+
+                    map[z, x, 0] = grass / sum;
+                    map[z, x, 1] = rock / sum;
+                    map[z, x, 2] = snow / sum;
+                    map[z, x, 3] = road / sum;
+                }
+            }
+            return map;
+        }
+
+        // --- road ribbon ----------------------------------------------------
+
+        /// <summary>
+        /// A ribbon mesh following the route. Built as its own geometry rather
+        /// than painted on the terrain so it stays crisp regardless of heightmap
+        /// resolution, and so it can sit a few centimetres proud of the ground.
+        /// </summary>
+        public static Mesh BuildRoadMesh(WorldSettings s, RoutePath route, float step = 4f, float lift = 0.25f)
+        {
+            int segments = Mathf.Max(16, Mathf.CeilToInt(route.Length / step));
+            float half = s.RoadWidth * 0.5f;
+
+            var verts = new List<Vector3>(segments * 2 + 2);
+            var uvs = new List<Vector2>(segments * 2 + 2);
+            var norms = new List<Vector3>(segments * 2 + 2);
+            var tris = new List<int>(segments * 6);
+
+            Vector3 origin = route.PositionAt(0f);
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float d = (i / (float)segments) * route.Length;
+                Vector3 p = route.PositionAt(d);
+                Vector3 fwd = route.ForwardAt(d, 6f);
+                Vector3 right = Vector3.Cross(Vector3.up, fwd).normalized;
+                Vector3 up = Vector3.Cross(fwd, right).normalized;
+
+                Vector3 lifted = p + Vector3.up * lift;
+                verts.Add(lifted - right * half - origin);
+                verts.Add(lifted + right * half - origin);
+                norms.Add(up); norms.Add(up);
+
+                // V runs in metres so the centre line repeats at a fixed spacing
+                // no matter how long the course is.
+                float vCoord = d / 8f;
+                uvs.Add(new Vector2(0f, vCoord));
+                uvs.Add(new Vector2(1f, vCoord));
+
+                if (i < segments)
+                {
+                    int b = i * 2;
+                    tris.Add(b); tris.Add(b + 2); tris.Add(b + 1);
+                    tris.Add(b + 1); tris.Add(b + 2); tris.Add(b + 3);
+                }
+            }
+
+            var mesh = new Mesh { name = "RoadRibbon", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(norms);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        public static Vector3 RoadMeshOrigin(RoutePath route) => route.PositionAt(0f);
+    }
+}

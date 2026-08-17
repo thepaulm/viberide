@@ -1,0 +1,302 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using UnityEngine;
+using Debug = UnityEngine.Debug;
+
+namespace KickrWorld
+{
+    /// <summary>
+    /// Starts the Python bridge when the app starts, and guarantees it dies when
+    /// the app does.
+    ///
+    /// Shutdown is layered, because an orphaned bridge holds the trainer's single
+    /// BLE connection and blocks the next launch:
+    ///
+    ///   1. "shutdown" on the child's stdin  -- normal quit, immediate and clean
+    ///   2. stdin EOF                        -- app died without saying anything;
+    ///                                          the pipe closes on its own
+    ///   3. --parent-pid watchdog in Python  -- backstop for a hard crash, where
+    ///                                          even the pipe might linger
+    ///   4. Process.Kill()                   -- last resort if it ignores all that
+    ///
+    /// If a bridge is already listening (you started one by hand) this defers to
+    /// it and starts nothing, so a manual debugging session isn't fought over.
+    /// </summary>
+    public class BridgeLauncher : MonoBehaviour
+    {
+        [Header("Wiring")]
+        public TrainerLink Link;
+
+        [Header("Options")]
+        public bool LaunchOnStart = true;
+        public bool DemoMode = false;
+        // Blocks the main thread during quit, so keep it short. The bridge's own
+        // parent-PID watchdog cleans up within ~2s even if we give up waiting.
+        [Tooltip("Seconds to wait for a polite exit before killing the process.")]
+        public float ShutdownGraceSeconds = 2f;
+
+        public string Status { get; private set; } = "not started";
+        public bool Managing => _process != null && !SafeHasExited(_process);
+
+        Process _process;
+
+        // Output from the child arrives on background threads. Unity's Debug.Log
+        // takes an internal lock, and calling it off the main thread while the
+        // engine is still starting can stall the main thread. Queue instead, and
+        // drain from Update where logging is safe.
+        readonly System.Collections.Concurrent.ConcurrentQueue<string> _pendingLog = new();
+
+        public static bool BridgeDisabled =>
+            Array.IndexOf(Environment.GetCommandLineArgs(), "-nobridge") >= 0;
+
+        void Start()
+        {
+            if (BridgeDisabled)
+            {
+                Status = "disabled by -nobridge";
+                Debug.Log("[BridgeLauncher] -nobridge given; not starting the bridge.");
+                return;
+            }
+            // Wait a frame so the launch never happens during scene load.
+            if (LaunchOnStart) StartCoroutine(LaunchNextFrame());
+        }
+
+        System.Collections.IEnumerator LaunchNextFrame()
+        {
+            yield return null;
+            Launch();
+        }
+
+        void Update()
+        {
+            int drained = 0;
+            while (drained++ < 40 && _pendingLog.TryDequeue(out var line))
+                Debug.Log($"[bridge] {line}");
+        }
+
+        // --- locating things ---------------------------------------------------
+
+        /// <summary>
+        /// Where the bridge lives, per platform. In a player the bridge is copied
+        /// next to the game data; in the editor it is the repo folder.
+        /// </summary>
+        public static string FindBridgeDirectory()
+        {
+            var candidates = new List<string>();
+            string data = Application.dataPath;
+
+            if (Application.isEditor)
+            {
+                // <project>/Assets -> <project>/../bridge
+                candidates.Add(Path.GetFullPath(Path.Combine(data, "..", "..", "bridge")));
+            }
+            else
+            {
+                // macOS:   Foo.app/Contents/Resources/Data -> Contents/Resources/bridge
+                // Windows: Foo_Data                        -> <alongside exe>/bridge
+                candidates.Add(Path.GetFullPath(Path.Combine(data, "..", "bridge")));
+                candidates.Add(Path.GetFullPath(Path.Combine(data, "..", "..", "bridge")));
+                // Beside the .app itself. Creating a virtualenv inside a bundle
+                // fails if the app lives somewhere the user cannot write, so an
+                // external copy has to be allowed to win.
+                candidates.Add(Path.GetFullPath(Path.Combine(data, "..", "..", "..", "bridge")));
+                candidates.Add(Path.GetFullPath(Path.Combine(data, "..", "..", "..", "..", "bridge")));
+            }
+
+            // A bridge that already has its virtualenv beats one that doesn't,
+            // wherever it happens to live.
+            foreach (var c in candidates)
+                if (Directory.Exists(Path.Combine(c, "kickr_bridge")) && HasVenv(c))
+                    return c;
+            foreach (var c in candidates)
+                if (Directory.Exists(Path.Combine(c, "kickr_bridge")))
+                    return c;
+
+            return null;
+        }
+
+        static bool HasVenv(string bridgeDir)
+        {
+            return File.Exists(Path.Combine(bridgeDir, ".venv", "bin", "python"))
+                   || File.Exists(Path.Combine(bridgeDir, ".venv", "Scripts", "python.exe"));
+        }
+
+        /// <summary>
+        /// Prefer the bridge's own virtualenv; fall back to a system interpreter.
+        /// The venv is platform-specific and is never shipped between machines --
+        /// setup_mac.sh builds it on the Mac.
+        /// </summary>
+        public static string FindPython(string bridgeDir)
+        {
+            bool windows = Application.platform == RuntimePlatform.WindowsPlayer
+                           || Application.platform == RuntimePlatform.WindowsEditor;
+
+            string venv = windows
+                ? Path.Combine(bridgeDir, ".venv", "Scripts", "python.exe")
+                : Path.Combine(bridgeDir, ".venv", "bin", "python");
+            if (File.Exists(venv)) return venv;
+
+            foreach (var name in windows
+                         ? new[] { "python.exe" }
+                         : new[] { "/usr/bin/python3", "/usr/local/bin/python3", "/opt/homebrew/bin/python3" })
+            {
+                if (!windows && File.Exists(name)) return name;
+                if (windows) return name;   // resolved via PATH by the OS
+            }
+            return null;
+        }
+
+        /// <summary>Is something already serving on the bridge port?</summary>
+        public static bool PortInUse(int port)
+        {
+            try
+            {
+                using var probe = new TcpClient();
+                var result = probe.BeginConnect(IPAddress.Loopback, port, null, null);
+                // Short: this runs on the main thread, and a loopback connect
+                // either succeeds immediately or is not going to.
+                bool open = result.AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(120));
+                if (open) probe.EndConnect(result);
+                return open;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // --- launching ---------------------------------------------------------
+
+        public void Launch()
+        {
+            int port = ParsePort(Link != null ? Link.Url : "ws://127.0.0.1:8765");
+
+            if (PortInUse(port))
+            {
+                Status = $"using bridge already running on :{port}";
+                Debug.Log($"[BridgeLauncher] {Status}");
+                return;
+            }
+
+            string bridgeDir = FindBridgeDirectory();
+            if (bridgeDir == null)
+            {
+                Status = "bridge folder not found";
+                Debug.LogError("[BridgeLauncher] Could not locate the bridge directory. " +
+                               "Expected a folder named 'bridge' containing 'kickr_bridge' " +
+                               $"near {Application.dataPath}.");
+                return;
+            }
+
+            string python = FindPython(bridgeDir);
+            if (python == null)
+            {
+                Status = "python not found";
+                Debug.LogError($"[BridgeLauncher] No Python found. Run setup_mac.sh in {bridgeDir}.");
+                return;
+            }
+
+            var args = $"-u -m kickr_bridge.server --port {port} --parent-pid {Process.GetCurrentProcess().Id} --watch-stdin";
+            if (DemoMode) args += " --demo";
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = python,
+                Arguments = args,
+                WorkingDirectory = bridgeDir,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,   // our graceful shutdown channel
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+
+            try
+            {
+                _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                _process.OutputDataReceived += (_, e) => Relay(e.Data, false);
+                _process.ErrorDataReceived += (_, e) => Relay(e.Data, false);
+                _process.Start();
+                _process.BeginOutputReadLine();
+                _process.BeginErrorReadLine();
+
+                Status = $"launched (pid {_process.Id})";
+                Debug.Log($"[BridgeLauncher] {python} {args}\n[BridgeLauncher] {Status}");
+            }
+            catch (Exception exc)
+            {
+                Status = $"launch failed: {exc.Message}";
+                Debug.LogError($"[BridgeLauncher] Could not start the bridge: {exc}");
+                _process = null;
+            }
+        }
+
+        void Relay(string line, bool isError)
+        {
+            if (string.IsNullOrEmpty(line)) return;
+            // Called on a background thread: queue only, never touch Unity here.
+            // Bounded so a chatty bridge can never grow this without limit.
+            if (_pendingLog.Count < 500) _pendingLog.Enqueue(line);
+        }
+
+        static int ParsePort(string url)
+        {
+            try { return new Uri(url).Port; } catch { return 8765; }
+        }
+
+        static bool SafeHasExited(Process p)
+        {
+            try { return p.HasExited; } catch { return true; }
+        }
+
+        // --- shutdown ----------------------------------------------------------
+
+        void OnApplicationQuit() => Shutdown();
+        void OnDestroy() => Shutdown();
+
+        public void Shutdown()
+        {
+            var proc = _process;
+            _process = null;
+            if (proc == null) return;
+
+            try
+            {
+                if (SafeHasExited(proc)) return;
+
+                // Politely first. Closing stdin afterwards gives EOF as a second
+                // chance in case the line was missed.
+                try
+                {
+                    proc.StandardInput.WriteLine("shutdown");
+                    proc.StandardInput.Flush();
+                    proc.StandardInput.Close();
+                }
+                catch (Exception exc)
+                {
+                    Debug.LogWarning($"[BridgeLauncher] could not signal the bridge: {exc.Message}");
+                }
+
+                int graceMs = Mathf.RoundToInt(Mathf.Max(0.5f, ShutdownGraceSeconds) * 1000f);
+                if (!proc.WaitForExit(graceMs))
+                {
+                    Debug.LogWarning("[BridgeLauncher] bridge did not exit in time; killing it.");
+                    try { proc.Kill(); proc.WaitForExit(1500); }
+                    catch (Exception exc) { Debug.LogWarning($"[BridgeLauncher] kill failed: {exc.Message}"); }
+                }
+                else
+                {
+                    Debug.Log("[BridgeLauncher] bridge exited cleanly.");
+                }
+            }
+            finally
+            {
+                try { proc.Dispose(); } catch { }
+            }
+        }
+    }
+}
