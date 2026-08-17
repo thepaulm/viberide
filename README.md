@@ -349,6 +349,26 @@ Three things to know:
   xattr -dr com.apple.quarantine VibeRide.app
   ```
 
+### Packaging
+
+`packaging/mac/` holds what ships alongside the app:
+
+| File | Purpose |
+| --- | --- |
+| `setup.sh` | one-time setup the rider runs: permissions, re-sign, virtualenv |
+| `START_HERE.md` | the instructions that go in the zip |
+| `makezip.ps1` | builds the zip with **forward-slash** entry names |
+
+That last one matters. PowerShell's `Compress-Archive` writes backslash path
+separators, which macOS does not treat as directory separators — it unpacks the
+`.app` as ~150 flat files with backslashes in their names, i.e. a broken bundle.
+`makezip.ps1` writes spec-compliant entries and verifies none contain a
+backslash before finishing.
+
+The zip deliberately ships `START_HERE.md` rather than this README: this file
+references images under `docs/`, which are not in the package, so every one of
+them would render broken.
+
 ### The bridge
 
 ```bash
