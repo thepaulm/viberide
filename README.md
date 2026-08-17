@@ -103,7 +103,22 @@ Bottom-left, or press **Escape**:
 | --- | --- |
 | Units | Metric / imperial, remembered between sessions |
 | Regenerate | New seed: rebuilds terrain, course and road live (~6 s) |
+| Save As | Keep the current world under a name |
+| Load | Bring a saved world back |
 | Exit | Quits, stopping the bridge on the way out |
+
+![Saved worlds](docs/saved-worlds.png)
+
+**Saved worlds store only the seed.** Terrain, course and road all derive from
+it, so a favourite is a few bytes rather than a heightmap, and it stays valid for
+as long as the generator does. The lap and climbing figures are cached alongside
+purely so the list can describe a world without regenerating every entry to find
+out what it is. Save As pre-fills the name with the course's biggest climb, since
+that is what a rider would call it anyway.
+
+They live in `courses.json` under the player's data directory —
+`~/Library/Application Support/VibeRide/VibeRide/` on macOS. A corrupt file is
+logged and ignored rather than being allowed to stop the app starting.
 
 Everything internal stays SI — physics, course, wire protocol — and units are
 converted only when drawing text. Converting any earlier would mean two sources
@@ -131,12 +146,26 @@ the analytic derivative of the profile. Gradients are therefore exact and
 tunable rather than emergent.
 
 The course is **generated from the seed**, so Regenerate gives a genuinely
-different ride rather than the same climbs under new scenery.
+different ride rather than the same climbs under new scenery. Three worlds, three
+seeds, nothing else changed:
 
-![A regenerated four-climb course](docs/course.png)
+![Seed 31337](docs/world-31337.png)
 
-*A different seed: four climbs instead of three, visible in the profile strip.
-Terrain, road and course are all rebuilt together.*
+*Seed 31337 — 24.87 km, 589 m. Descending Col de Nuage at 50 km/h through a
+rock-walled valley.*
+
+![Seed 90210](docs/world-90210.png)
+
+*Seed 90210 — 25.06 km, 599 m. Grinding up Mont Carbon at 5.3% under sheer grey
+cliffs.*
+
+![Seed 555](docs/world-555.png)
+
+*Seed 555 — 25.05 km, 603 m. Puerto de Verdon, rolling green country with a snow
+ridge on the skyline.*
+
+Note the profile strips: three climbs, three climbs with a wall, four climbs.
+Terrain, road and course are all rebuilt together, in about six seconds.
 
 A typical lap:
 

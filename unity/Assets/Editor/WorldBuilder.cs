@@ -206,10 +206,12 @@ namespace KickrWorld.EditorTools
 
             var menu = world.AddComponent<RideMenu>();
             menu.Regenerator = regen;
+            menu.World = rideWorld;
             hud.Menu = menu;
 
             var shot = world.AddComponent<AutoScreenshot>();
             shot.Rider = rider;
+            shot.Regenerator = regen;
 
             BuildLighting();
             AssertNoMissingScripts();

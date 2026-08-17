@@ -21,6 +21,7 @@ namespace KickrWorld
     public class AutoScreenshot : MonoBehaviour
     {
         public BikeRider Rider;
+        public WorldRegenerator Regenerator;
 
         void Start() => StartCoroutine(Run());
 
@@ -48,11 +49,19 @@ namespace KickrWorld
             string path = Arg("-screenshot");
             if (string.IsNullOrEmpty(path)) yield break;
 
+            // Wait out any regenerate before positioning the rider: regeneration
+            // finishes by resetting distance to zero, so jumping first would be
+            // silently undone.
+            yield return null;
+            if (Regenerator != null)
+            {
+                while (Regenerator.Busy) yield return null;
+                yield return null;
+            }
+
             float startDistance = Num("-startdistance", -1f);
             if (startDistance >= 0f && Rider != null)
             {
-                // Give RideWorld a frame to build the route before jumping.
-                yield return null;
                 Rider.Jump(startDistance);
                 Debug.Log($"[AutoScreenshot] jumped rider to {startDistance:F0} m");
             }
