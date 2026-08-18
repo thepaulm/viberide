@@ -39,3 +39,8 @@ KickrWorld-mac-*.zip
 report
 report-*
 crash-*.txt
+
+# Downloaded asset archives. Only the models actually used are committed, under
+# unity/Assets/Models/ -- see that folder's CREDITS.md. The full packs are large
+# and re-downloadable from the URLs recorded there.
+thirdparty/

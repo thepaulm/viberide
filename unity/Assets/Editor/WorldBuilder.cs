@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -217,6 +218,7 @@ namespace KickrWorld.EditorTools
             scatter.World = rideWorld;
             scatter.Terrain = terrain;
             scatter.Kinds = PropScatter.DefaultKinds();
+            AssignPropModels(scatter);
             regen.Scatter = scatter;
 
             BuildLighting();
@@ -232,6 +234,62 @@ namespace KickrWorld.EditorTools
         }
 
         static void Log(string msg) => Debug.Log($"[WorldBuilder] {msg}");
+
+        /// <summary>
+        /// Point each scenery kind at its imported models. Kept in the editor
+        /// because PropScatter is runtime code and cannot touch AssetDatabase.
+        /// Anything missing is reported and simply falls back to a placeholder,
+        /// so a partial import degrades rather than breaking the build.
+        /// </summary>
+        static void AssignPropModels(PropScatter scatter)
+        {
+            var wanted = new Dictionary<string, string[]>
+            {
+                ["conifer"] = new[]
+                {
+                    "Nature/tree_default", "Nature/tree_detailed", "Nature/tree_oak",
+                    "Nature/tree_fat", "Nature/tree_cone", "Nature/tree_blocks",
+                    "Nature/tree_pineDefaultA", "Nature/tree_pineTallA", "Nature/tree_pineRoundA",
+                },
+                ["boulder"] = new[]
+                {
+                    "Nature/rock_largeA", "Nature/rock_largeB", "Nature/rock_smallA",
+                    "Nature/rock_smallB", "Nature/rock_tallA",
+                },
+                ["farmhouse"] = new[]
+                {
+                    "City/building-a", "City/building-c", "City/building-e",
+                    "City/building-h", "City/building-k", "City/building-n",
+                },
+                ["parked vehicle"] = new[]
+                {
+                    "Cars/sedan", "Cars/hatchback-sports", "Cars/suv", "Cars/van",
+                    "Cars/truck", "Cars/delivery", "Cars/ambulance", "Cars/tractor",
+                },
+                ["dinosaur"] = new[]
+                {
+                    "Dinosaurs/Trex", "Dinosaurs/Triceratops", "Dinosaurs/Stegosaurus",
+                    "Dinosaurs/Apatosaurus", "Dinosaurs/Parasaurolophus", "Dinosaurs/Velociraptor",
+                },
+            };
+
+            foreach (var kind in scatter.Kinds)
+            {
+                if (kind == null || !wanted.TryGetValue(kind.Name, out var paths)) continue;
+                kind.Prefabs = new List<GameObject>();
+                var missing = new List<string>();
+
+                foreach (var rel in paths)
+                {
+                    var asset = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Models/{rel}.fbx");
+                    if (asset != null) kind.Prefabs.Add(asset);
+                    else missing.Add(rel);
+                }
+
+                Log($"  {kind.Name}: {kind.Prefabs.Count} model(s)" +
+                    (missing.Count > 0 ? $", MISSING {string.Join(", ", missing)}" : ""));
+            }
+        }
 
         /// <summary>Collapse the transition/body segment pairs into one line per
         /// named feature, with its length and gradient range.</summary>

@@ -14,9 +14,18 @@ namespace KickrWorld
     {
         public string Name = "prop";
 
-        [Tooltip("Model to place. Left empty, a crude placeholder is generated, so " +
+        [Tooltip("Models to place. One is picked per instance, so a kind with " +
+                 "several variants does not read as the same object stamped " +
+                 "repeatedly. Left empty, a crude placeholder is generated so " +
                  "placement can be tuned before any real model exists.")]
-        public GameObject Prefab;
+        public List<GameObject> Prefabs = new List<GameObject>();
+
+        [Tooltip("Desired world height in metres, before per-instance scale " +
+                 "variation. Imported models arrive in whatever units their author " +
+                 "used -- Kenney kits are roughly one unit per tile, not per metre -- " +
+                 "so normalising by measured bounds beats guessing a scale factor. " +
+                 "Zero keeps the model at its authored size.")]
+        public float TargetHeight = 0f;
 
         [Tooltip("Instances per kilometre of route.")]
         public float PerKilometre = 12f;
@@ -183,7 +192,10 @@ namespace KickrWorld
                 // permanently lost instance.
                 int attempts = Mathf.Min(4000, Mathf.CeilToInt(budget[k] / avgCluster) * 8 + 20);
                 int placedForKind = 0;
-                var template = kind.Prefab != null ? kind.Prefab : MakePlaceholder(kind);
+                var variants = new List<GameObject>();
+                if (kind.Prefabs != null)
+                    foreach (var pf in kind.Prefabs) if (pf != null) variants.Add(pf);
+                if (variants.Count == 0) variants.Add(MakePlaceholder(kind));
 
                 for (int i = 0; i < attempts && placedForKind < budget[k] && placed < MaxInstances; i++)
                 {
@@ -209,6 +221,7 @@ namespace KickrWorld
                         // Re-check the offset for cluster members: a village will
                         // otherwise creep onto the tarmac one house at a time.
                         if (Vector2.Distance(spot, centre) < kind.MinOffset * 0.8f) continue;
+                        var template = variants[rng.Next(variants.Count)];
                         if (TryPlace(template, kind, spot, rng)) { placed++; placedForKind++; }
                     }
                 }
@@ -235,12 +248,26 @@ namespace KickrWorld
             float ground = Terrain.SampleHeight(new Vector3(spot.x, 0f, spot.y)) + tp.y;
             float s = kind.MinScale + (float)rng.NextDouble() * (kind.MaxScale - kind.MinScale);
 
-            // Primitives (and most imported models) pivot at their centre, so
-            // placing one at ground height buries half of it. Lift by the scaled
-            // half-height, less whatever burial this kind wants.
-            var mf = template.GetComponent<MeshFilter>();
-            float halfHeight = mf != null && mf.sharedMesh != null ? mf.sharedMesh.bounds.extents.y : 0.5f;
-            float lift = halfHeight * template.transform.localScale.y * s * (1f - 2f * kind.GroundSink);
+            // Normalise authored size to the height this kind wants. Imported
+            // models arrive in whatever units their author chose, so measuring
+            // beats hardcoding a per-pack scale factor that breaks the moment a
+            // model is swapped.
+            Bounds local = LocalBounds(template);
+            if (kind.TargetHeight > 0.01f && local.size.y > 0.0001f)
+            {
+                float fit = kind.TargetHeight / (local.size.y * template.transform.localScale.y);
+                // Clamp it. Normalising on height alone blows up a model that is
+                // wide and flat -- a tree stump forced to 2.2 m tall became an 8 m
+                // slab lying in the grass. A pathological aspect ratio should give
+                // a slightly wrong size, not a landscape feature.
+                s *= Mathf.Clamp(fit, 0.25f, 4f);
+            }
+
+            // Models pivot wherever their author put the origin -- centre for
+            // Unity primitives, base for many kits. Use the measured bounds so
+            // either sits correctly on the ground rather than half sunk.
+            float bottom = local.min.y * template.transform.localScale.y * s;
+            float lift = -bottom - local.size.y * template.transform.localScale.y * s * kind.GroundSink;
 
             var go = Instantiate(template, new Vector3(spot.x, ground + lift, spot.y), Quaternion.identity, _root);
             go.SetActive(true);
@@ -253,6 +280,37 @@ namespace KickrWorld
 
             go.transform.localScale = template.transform.localScale * s;
             return true;
+        }
+
+        /// <summary>
+        /// Combined bounds of every mesh under this object, in its own space.
+        /// An imported FBX usually keeps its meshes on child transforms, so the
+        /// root has no renderer of its own to measure.
+        /// </summary>
+        static Bounds LocalBounds(GameObject go)
+        {
+            var filters = go.GetComponentsInChildren<MeshFilter>(true);
+            bool any = false;
+            var result = new Bounds(Vector3.zero, Vector3.zero);
+
+            foreach (var f in filters)
+            {
+                if (f.sharedMesh == null) continue;
+                var b = f.sharedMesh.bounds;
+                // Express the child's bounds in the root's space.
+                if (f.transform != go.transform)
+                {
+                    var offset = go.transform.InverseTransformPoint(f.transform.position);
+                    var scale = f.transform.lossyScale;
+                    b = new Bounds(b.center + offset,
+                                   Vector3.Scale(b.size, new Vector3(
+                                       Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z))));
+                }
+                if (!any) { result = b; any = true; } else result.Encapsulate(b);
+            }
+
+            if (!any) result = new Bounds(Vector3.zero, Vector3.one);
+            return result;
         }
 
         /// <summary>
@@ -303,7 +361,7 @@ namespace KickrWorld
             {
                 new PropKind
                 {
-                    Name = "conifer", PerKilometre = 58f,
+                    Name = "conifer", PerKilometre = 58f, TargetHeight = 9f,
                     MinOffset = 16f, MaxOffset = 150f, MaxSlopeDegrees = 34f,
                     MinScale = 0.7f, MaxScale = 1.6f,
                     ClusterMin = 2, ClusterMax = 6, ClusterRadius = 26f,
@@ -313,7 +371,7 @@ namespace KickrWorld
                 },
                 new PropKind
                 {
-                    Name = "boulder", PerKilometre = 24f,
+                    Name = "boulder", PerKilometre = 24f, TargetHeight = 2.2f,
                     MinOffset = 13f, MaxOffset = 140f, MaxSlopeDegrees = 40f,
                     MinScale = 0.6f, MaxScale = 2.2f, AlignToGround = true, GroundSink = 0.3f,
                     PlaceholderShape = PrimitiveType.Sphere,
@@ -322,7 +380,7 @@ namespace KickrWorld
                 },
                 new PropKind
                 {
-                    Name = "farmhouse", PerKilometre = 4f,
+                    Name = "farmhouse", PerKilometre = 4f, TargetHeight = 11f,
                     MinOffset = 40f, MaxOffset = 130f, MaxSlopeDegrees = 15f,
                     MinScale = 0.9f, MaxScale = 1.25f,
                     ClusterMin = 1, ClusterMax = 4, ClusterRadius = 34f,
@@ -332,7 +390,7 @@ namespace KickrWorld
                 },
                 new PropKind
                 {
-                    Name = "parked vehicle", PerKilometre = 2.5f,
+                    Name = "parked vehicle", PerKilometre = 2.5f, TargetHeight = 1.6f,
                     MinOffset = 11f, MaxOffset = 17f, MaxSlopeDegrees = 12f,
                     MinScale = 0.95f, MaxScale = 1.05f, AlignToGround = true,
                     PlaceholderShape = PrimitiveType.Cube,
@@ -341,7 +399,7 @@ namespace KickrWorld
                 },
                 new PropKind
                 {
-                    Name = "dinosaur", PerKilometre = 1.1f,
+                    Name = "dinosaur", PerKilometre = 1.1f, TargetHeight = 7f,
                     MinOffset = 45f, MaxOffset = 150f, MaxSlopeDegrees = 24f,
                     MinScale = 1.0f, MaxScale = 1.8f,
                     PlaceholderShape = PrimitiveType.Capsule,

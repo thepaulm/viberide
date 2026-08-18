@@ -117,9 +117,18 @@ in one uniform sprinkle:
 | parked vehicle | 2.5 | 11–17 m | 12° | hugs the verge |
 | dinosaur | 1.1 | 45–150 m | 24° | rare |
 
-Models go in each kind's `Prefab`. Until one is assigned, a coloured primitive of
-roughly the right size stands in, so placement can be tuned before committing to
-any particular asset.
+Models live in `unity/Assets/Models/`, all **CC0** — Kenney's Nature, Car and City
+kits, plus Quaternius's Animated Dinosaur Pack. Sources and licences are recorded
+in [`Models/CREDITS.md`](unity/Assets/Models/CREDITS.md). Each kind holds several
+variants and picks one per instance, so a copse is not the same tree stamped nine
+times. Any kind with no models assigned falls back to a coloured primitive, so a
+partial import degrades instead of breaking the build.
+
+Models are **not** scaled at import. Each is normalised by its measured bounds to
+the kind's `TargetHeight` in metres, because an imported model arrives in whatever
+units its author chose. The scale factor is clamped: normalising on height alone
+blows up anything wide and flat, and a tree stump forced to 2.2 m tall became an
+8 m slab lying in the grass.
 
 Three things that were wrong on the first attempt, all worth not re-introducing:
 
