@@ -2,21 +2,22 @@
 
 Ride a Wahoo KICKR through generated 3D terrain.
 
-![VibeRide on the Hairpin descent](docs/screenshot.png)
+![Descending Col de Verdon past a sauropod](docs/screenshot.png)
 
-*Descending at 61.3 km/h on a -6.3% gradient. The elevation profile bottom-right
-is coloured by gradient — green flat, amber rising, red brutal, blue descending —
-with the white marker showing position on the 25 km lap.*
+*Descending Col de Verdon at 50.5 km/h on a -6.1% gradient, with a sauropod
+grazing the far hillside. The elevation profile bottom-right is coloured by
+gradient — green flat, amber rising, red brutal, blue descending — with the white
+marker showing position on the 25 km lap.*
 
 Your trainer drives it: power and cadence come in over Bluetooth, a physics model
 turns them into speed, and the road gradient goes back out to the trainer as FTMS
 simulation parameters — so the flywheel gets physically harder on the climbs.
 
-![The menu, climbing Col de Carbon](docs/menu.png)
+![The in-app menu, climbing Puerto de Vireux](docs/menu.png)
 
-*318 W at +7.9% on Col de Carbon. The menu switches between metric and imperial,
-and **Regenerate** rebuilds the entire world — terrain, course and road — from a
-new seed at runtime, in about six seconds.*
+*319 W at +7.6% on Puerto de Vireux. The menu switches between metric and
+imperial, saves and loads named worlds, and **Regenerate** rebuilds the entire
+world — terrain, course, road and scenery — from a new seed in about six seconds.*
 
 The app is **VibeRide**; the repository folder and the internal code namespaces
 (`KickrWorld` in C#, `kickr_bridge` in Python) still carry the original working
@@ -104,7 +105,16 @@ reproducible, loading a favourite would give you a different landscape than the
 one you saved. The scatter draws from its own random stream, salted off the seed,
 so adding a new prop kind cannot shift the terrain of an already-saved world.
 
-Run the player with `-verifyscatter` to scatter twice and compare fingerprints.
+Run the player with `-verifyscatter` to scatter twice and compare fingerprints,
+and `-startnear dinosaur` to jump to a placed instance rather than hunting for
+one at roughly one per kilometre.
+
+> **Placement is stable for a given seed and a given build, not across builds.**
+> Anything that changes how many random numbers the scatter draws will shift
+> every position downstream of it — adding the dinosaur material picker moved the
+> whole layout, because choosing a material consumes a draw. Terrain and course
+> are unaffected, since the scatter uses its own salted stream, so a saved world
+> keeps its mountains and its climbs; only where the trees stand can move.
 
 Each kind carries its own placement rules, which is what stops everything landing
 in one uniform sprinkle:
@@ -205,7 +215,7 @@ rock-walled valley.*
 ![Seed 90210](docs/world-90210.png)
 
 *Seed 90210 — 25.06 km, 599 m. Grinding up Mont Carbon at 5.3% under sheer grey
-cliffs.*
+cliffs, with a stegosaurus on the slope above.*
 
 ![Seed 555](docs/world-555.png)
 

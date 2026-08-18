@@ -220,6 +220,7 @@ namespace KickrWorld.EditorTools
             scatter.Kinds = PropScatter.DefaultKinds();
             AssignPropModels(scatter);
             regen.Scatter = scatter;
+            shot.Scatter = scatter;
 
             BuildLighting();
             AssertNoMissingScripts();
@@ -286,7 +287,23 @@ namespace KickrWorld.EditorTools
                     else missing.Add(rel);
                 }
 
+                // The Quaternius dinosaurs export with a near-black diffuse
+                // (Kd 0.058 0.070 0.050) and render as silhouettes, so give them
+                // usable colours. A few variants, picked per instance, so a herd
+                // is not all one shade.
+                if (kind.Name == "dinosaur")
+                {
+                    kind.MaterialOverrides = new List<Material>
+                    {
+                        MakeDinoMaterial("DinoOlive", new Color(0.36f, 0.42f, 0.26f)),
+                        MakeDinoMaterial("DinoSlate", new Color(0.42f, 0.45f, 0.48f)),
+                        MakeDinoMaterial("DinoRust",  new Color(0.52f, 0.36f, 0.26f)),
+                        MakeDinoMaterial("DinoSand",  new Color(0.62f, 0.56f, 0.40f)),
+                    };
+                }
+
                 Log($"  {kind.Name}: {kind.Prefabs.Count} model(s)" +
+                    (kind.MaterialOverrides.Count > 0 ? $", {kind.MaterialOverrides.Count} material override(s)" : "") +
                     (missing.Count > 0 ? $", MISSING {string.Join(", ", missing)}" : ""));
             }
         }
@@ -528,6 +545,15 @@ namespace KickrWorld.EditorTools
         }
 
         // --- materials & textures -------------------------------------------
+
+        static Material MakeDinoMaterial(string name, Color color)
+        {
+            var mat = new Material(Shader.Find("Standard")) { name = name, color = color };
+            mat.SetFloat("_Glossiness", 0.12f);
+            mat.enableInstancing = true;
+            AssetDatabase.CreateAsset(mat, $"{GenDir}/{name}.mat");
+            return mat;
+        }
 
         static Material MakeTerrainMaterial()
         {

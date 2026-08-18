@@ -54,6 +54,12 @@ namespace KickrWorld
         public int ClusterMax = 1;
         public float ClusterRadius = 30f;
 
+        [Tooltip("Replaces whatever materials the model shipped with. One is " +
+                 "picked per instance. Needed where an exported material is not " +
+                 "usable -- the Quaternius dinosaurs carry a near-black diffuse " +
+                 "(Kd 0.058 0.070 0.050) and render as silhouettes without this.")]
+        public List<Material> MaterialOverrides = new List<Material>();
+
         public Color PlaceholderColor = Color.grey;
         public Vector3 PlaceholderSize = Vector3.one;
         public PrimitiveType PlaceholderShape = PrimitiveType.Cube;
@@ -78,6 +84,10 @@ namespace KickrWorld
         public int MaxInstances = 1700;
 
         public int Placed { get; private set; }
+
+        /// <summary>Route distances at which each kind was placed. Useful for
+        /// finding a rare prop without riding the whole lap looking for it.</summary>
+        public readonly Dictionary<string, List<float>> PlacedAt = new Dictionary<string, List<float>>();
 
         Transform _root;
         readonly List<Material> _ownedMaterials = new List<Material>();
@@ -154,6 +164,7 @@ namespace KickrWorld
 
             _root = new GameObject("Props").transform;
             _root.SetParent(transform, false);
+            PlacedAt.Clear();
 
             var rng = new System.Random(seed ^ ScatterSalt);
             float Range(float a, float b) => a + (float)rng.NextDouble() * (b - a);
@@ -222,7 +233,13 @@ namespace KickrWorld
                         // otherwise creep onto the tarmac one house at a time.
                         if (Vector2.Distance(spot, centre) < kind.MinOffset * 0.8f) continue;
                         var template = variants[rng.Next(variants.Count)];
-                        if (TryPlace(template, kind, spot, rng)) { placed++; placedForKind++; }
+                        if (TryPlace(template, kind, spot, rng))
+                        {
+                            placed++; placedForKind++;
+                            if (!PlacedAt.TryGetValue(kind.Name, out var list))
+                                PlacedAt[kind.Name] = list = new List<float>();
+                            list.Add(d);
+                        }
                     }
                 }
 
@@ -272,6 +289,22 @@ namespace KickrWorld
             var go = Instantiate(template, new Vector3(spot.x, ground + lift, spot.y), Quaternion.identity, _root);
             go.SetActive(true);
             go.name = kind.Name;
+
+            if (kind.MaterialOverrides != null && kind.MaterialOverrides.Count > 0)
+            {
+                var chosen = kind.MaterialOverrides[rng.Next(kind.MaterialOverrides.Count)];
+                if (chosen != null)
+                {
+                    // sharedMaterials, not materials: assigning to .materials would
+                    // clone a material per instance and defeat batching entirely.
+                    foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+                    {
+                        var slots = r.sharedMaterials;
+                        for (int m = 0; m < slots.Length; m++) slots[m] = chosen;
+                        r.sharedMaterials = slots;
+                    }
+                }
+            }
 
             float yaw = (float)rng.NextDouble() * 360f;
             go.transform.rotation = kind.AlignToGround

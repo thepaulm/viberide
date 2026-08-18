@@ -22,6 +22,7 @@ namespace KickrWorld
     {
         public BikeRider Rider;
         public WorldRegenerator Regenerator;
+        public PropScatter Scatter;
 
         void Start() => StartCoroutine(Run());
 
@@ -59,7 +60,18 @@ namespace KickrWorld
                 yield return null;
             }
 
+            // -startnear <kind> puts the rider just before a placed instance of
+            // that kind. A dinosaur at ~1 per km is otherwise a long hunt.
+            string near = Arg("-startnear");
             float startDistance = Num("-startdistance", -1f);
+            if (!string.IsNullOrEmpty(near) && Scatter != null &&
+                Scatter.PlacedAt.TryGetValue(near, out var spots) && spots.Count > 0)
+            {
+                int which = Mathf.Clamp(Mathf.RoundToInt(Num("-startnearindex", 0f)), 0, spots.Count - 1);
+                startDistance = Mathf.Max(0f, spots[which] - 55f);
+                Debug.Log($"[AutoScreenshot] -startnear {near}: {spots.Count} placed, " +
+                          $"using #{which} at {spots[which]:F0} m");
+            }
             if (startDistance >= 0f && Rider != null)
             {
                 Rider.Jump(startDistance);
