@@ -42,6 +42,9 @@ git fetch origin --quiet 2>$null
 $ahead = git rev-list --count origin/main..HEAD 2>$null
 if ($ahead -and [int]$ahead -gt 0) { throw "$ahead commit(s) not pushed. Push before releasing." }
 $sha = (git rev-parse --short HEAD).Trim()
+# GitHub rejects an abbreviated SHA as target_commitish with HTTP 422, so
+# keep the full one for the API and the short one for humans.
+$shaFull = (git rev-parse HEAD).Trim()
 Write-Host "    clean, at $sha"
 
 # --- build -------------------------------------------------------------------
@@ -138,7 +141,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
     } else {
         $ghArgs = @("release", "create", $tag, $zip,
-                    "--title", "VibeRide $Version", "--notes", $Notes, "--target", $sha)
+                    "--title", "VibeRide $Version", "--notes", $Notes, "--target", $shaFull)
         if ($Draft) { $ghArgs += "--draft" }
         & gh @ghArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
         if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
