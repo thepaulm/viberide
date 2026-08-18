@@ -213,6 +213,12 @@ namespace KickrWorld.EditorTools
             shot.Rider = rider;
             shot.Regenerator = regen;
 
+            var scatter = world.AddComponent<PropScatter>();
+            scatter.World = rideWorld;
+            scatter.Terrain = terrain;
+            scatter.Kinds = PropScatter.DefaultKinds();
+            regen.Scatter = scatter;
+
             BuildLighting();
             AssertNoMissingScripts();
 

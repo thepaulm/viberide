@@ -95,6 +95,45 @@ Work on the 3D side with no trainer present:
 cd bridge && .venv/Scripts/python.exe -m kickr_bridge.server --demo
 ```
 
+## Scenery
+
+`PropScatter` places trees, boulders, farmhouses, parked vehicles and dinosaurs
+across the landscape, **deterministically from the world seed**. That matters
+because a saved world persists nothing but its seed — if placement were not
+reproducible, loading a favourite would give you a different landscape than the
+one you saved. The scatter draws from its own random stream, salted off the seed,
+so adding a new prop kind cannot shift the terrain of an already-saved world.
+
+Run the player with `-verifyscatter` to scatter twice and compare fingerprints.
+
+Each kind carries its own placement rules, which is what stops everything landing
+in one uniform sprinkle:
+
+| Kind | Per km | Offset from road | Max slope | Notes |
+| --- | --- | --- | --- | --- |
+| conifer | 58 | 16–150 m | 34° | clusters of 2–6 |
+| boulder | 24 | 13–140 m | 40° | tilts with the ground, 30% buried |
+| farmhouse | 4 | 40–130 m | 15° | clusters of 1–4 |
+| parked vehicle | 2.5 | 11–17 m | 12° | hugs the verge |
+| dinosaur | 1.1 | 45–150 m | 24° | rare |
+
+Models go in each kind's `Prefab`. Until one is assigned, a coloured primitive of
+roughly the right size stands in, so placement can be tuned before committing to
+any particular asset.
+
+Three things that were wrong on the first attempt, all worth not re-introducing:
+
+- **A single global instance budget spent in list order starves whatever comes
+  last.** Trees are first and clustered, so they ate the entire allowance and no
+  dinosaur was ever placed. Budgets are now allotted per kind and scaled down
+  together when the total exceeds the cap.
+- **Rejected placements need retrying.** Slope tests reject most candidates on
+  mountainous ground, and without retries farmhouses filled 6 of 76 slots.
+- **Primitives pivot at their centre**, so placing one at ground height buries
+  half of it. Instances are lifted by their scaled half-height, less whatever
+  `GroundSink` the kind asks for — rocks look wrong perched on the surface, trees
+  look wrong sunk into it.
+
 ## In-app menu
 
 Bottom-left, or press **Escape**:

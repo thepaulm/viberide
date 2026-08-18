@@ -19,6 +19,7 @@ namespace KickrWorld
         public Terrain Terrain;
         public MeshFilter RoadMeshFilter;
         public BikeRider Rider;
+        public PropScatter Scatter;
 
         [Tooltip("Heightmap rows per frame. Lower is smoother but slower overall.")]
         public int RowsPerFrame = 48;
@@ -166,6 +167,17 @@ namespace KickrWorld
             Progress = 0.98f;
 
             World.ApplyRoute(route, seed);
+
+            if (Scatter != null)
+            {
+                Stage = "Placing scenery";
+                yield return null;
+                // After the terrain is in place: scatter samples ground height and
+                // slope, so doing it earlier would plant everything on the old
+                // landscape.
+                Scatter.Rebuild(route, seed);
+            }
+
             if (Rider != null) Rider.Jump(0f);
 
             Progress = 1f;
