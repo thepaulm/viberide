@@ -102,8 +102,12 @@ Step "Publishing release $tag"
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw "gh not found. Install it (winget install GitHub.cli) and run 'gh auth login'."
 }
-gh auth status 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "gh is not authenticated. Run: gh auth login" }
+$prevEAP0 = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$null = & gh auth status 2>&1
+$authed = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = $prevEAP0
+if (-not $authed) { throw "gh is not authenticated. Run: gh auth login" }
 
 if (-not $Notes) {
     $Notes = @"
@@ -118,16 +122,32 @@ See START_HERE.md inside the zip for the full instructions.
 "@
 }
 
-$existing = gh release view $tag --json tagName 2>$null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "    release $tag exists; replacing the asset"
-    gh release upload $tag $zip --clobber
-} else {
-    $args = @("release", "create", $tag, $zip, "--title", "VibeRide $Version", "--notes", $Notes, "--target", $sha)
-    if ($Draft) { $args += "--draft" }
-    gh @args
-}
+# PowerShell 5.1 turns a native command's stderr into a terminating error while
+# ErrorActionPreference is Stop, and `gh release view` writes "release not found"
+# to stderr as its normal way of reporting absence. Drop to Continue around gh
+# and judge success by exit code instead.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    $null = & gh release view $tag --json tagName 2>&1
+    $exists = ($LASTEXITCODE -eq 0)
 
-Step "Done"
-gh release view $tag --json tagName,url,assets --jq '"  \(.tagName)  \(.url)\n  assets: \(.assets | map(.name) | join(", "))"'
-Pop-Location
+    if ($exists) {
+        Write-Host "    release $tag exists; replacing the asset"
+        & gh release upload $tag $zip --clobber 2>&1 | ForEach-Object { Write-Host "    $_" }
+        if ($LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
+    } else {
+        $ghArgs = @("release", "create", $tag, $zip,
+                    "--title", "VibeRide $Version", "--notes", $Notes, "--target", $sha)
+        if ($Draft) { $ghArgs += "--draft" }
+        & gh @ghArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
+        if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
+    }
+
+    Step "Done"
+    & gh release view $tag --json tagName,url,assets 2>&1 | ForEach-Object { Write-Host "    $_" }
+}
+finally {
+    $ErrorActionPreference = $prevEAP
+    Pop-Location
+}
