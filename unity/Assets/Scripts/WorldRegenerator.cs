@@ -178,7 +178,8 @@ namespace KickrWorld
                 Scatter.Rebuild(route, seed);
             }
 
-            if (Rider != null) Rider.Jump(0f);
+            // A new world is a new ride: distance, climbing and clock all restart.
+            if (Rider != null) Rider.ResetRide();
 
             Progress = 1f;
             Stage = "Done";

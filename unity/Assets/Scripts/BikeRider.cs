@@ -35,10 +35,17 @@ namespace KickrWorld
         float _speed;
         float _nextGradeSend;
         float _lean;
+        float _lastElevation = float.NaN;
 
         public float Distance => _distance;
         public float SpeedMps => _speed;
         public float Grade { get; private set; }
+
+        /// <summary>Metres climbed this ride, the sum of upward movement only.</summary>
+        public float ElevationGain { get; private set; }
+
+        /// <summary>Seconds since the ride began.</summary>
+        public float RideTime { get; private set; }
         public string SegmentName { get; private set; } = "";
         public float Elevation { get; private set; }
 
@@ -54,6 +61,16 @@ namespace KickrWorld
         {
             var route = _world != null ? _world.Route : null;
             _distance = route != null ? route.Wrap(distanceMetres) : distanceMetres;
+            // Forget the previous height, or the teleport itself counts as climbing.
+            _lastElevation = float.NaN;
+        }
+
+        /// <summary>Start the ride over: distance, climbing and clock.</summary>
+        public void ResetRide()
+        {
+            Jump(0f);
+            ElevationGain = 0f;
+            RideTime = 0f;
         }
 
         void Update()
@@ -90,6 +107,18 @@ namespace KickrWorld
             Vector3 pos = route.PositionAt(_distance);
             Vector3 fwd = route.ForwardAt(_distance, 8f);
             Elevation = pos.y;
+
+            RideTime += dt;
+
+            // Sum upward movement only. The 25 m ceiling rejects teleports and
+            // anything discontinuous; a real rider cannot gain that much between
+            // two frames, so a jump that large is never genuine climbing.
+            if (!float.IsNaN(_lastElevation))
+            {
+                float climb = pos.y - _lastElevation;
+                if (climb > 0f && climb < 25f) ElevationGain += climb;
+            }
+            _lastElevation = pos.y;
 
             if (Bike != null)
             {

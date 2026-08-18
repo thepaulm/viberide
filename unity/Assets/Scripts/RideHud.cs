@@ -128,11 +128,30 @@ namespace KickrWorld
             GUI.color = prev;
         }
 
-        void Stat(ref float x, float y, string label, string value, float width = 132f)
+        /// <summary>
+        /// One column of the stat bar, sized to fit its own text.
+        ///
+        /// Fixed widths silently overlap the moment a value grows a character:
+        /// at 132 px, GRADE was fine at "+7.9%" and ran straight into ELEV at
+        /// "+12.9%". Measuring costs nothing here and cannot be outgrown.
+        /// </summary>
+        void Stat(ref float x, float y, string label, string value, float minWidth = 104f)
         {
-            GUI.Label(new Rect(x, y, width, 18f), label, _label);
-            GUI.Label(new Rect(x, y + 15f, width, 42f), value, _value);
-            x += width;
+            const float gutter = 24f;
+            float w = Mathf.Max(minWidth,
+                                _value.CalcSize(new GUIContent(value)).x + gutter,
+                                _label.CalcSize(new GUIContent(label)).x + 14f);
+            GUI.Label(new Rect(x, y, w, 18f), label, _label);
+            GUI.Label(new Rect(x, y + 15f, w, 42f), value, _value);
+            x += w;
+        }
+
+        /// <summary>h:mm:ss once past an hour, m:ss before that.</summary>
+        static string Clock(float seconds)
+        {
+            int total = Mathf.Max(0, Mathf.FloorToInt(seconds));
+            int h = total / 3600, m = (total % 3600) / 60, sec = total % 60;
+            return h > 0 ? $"{h}:{m:00}:{sec:00}" : $"{m}:{sec:00}";
         }
 
         void OnGUI()
@@ -149,11 +168,13 @@ namespace KickrWorld
             Box(new Rect(0f, 0f, Screen.width, 78f), new Color(0f, 0f, 0f, 0.55f));
             float x = 18f;
             Stat(ref x, 10f, "POWER", live ? $"{t.power_w:F0}w" : "--");
-            Stat(ref x, 10f, "CADENCE", live ? $"{t.cadence_rpm:F0}" : "--", 112f);
+            Stat(ref x, 10f, "CADENCE", live ? $"{t.cadence_rpm:F0}" : "--", 96f);
             Stat(ref x, 10f, $"SPEED {Units.SpeedSuffix}", $"{Units.Speed(Rider.SpeedMps):F1}");
             Stat(ref x, 10f, "GRADE", $"{gradePct:+0.0;-0.0;0.0}%");
-            Stat(ref x, 10f, "ELEV", Units.ElevationText(Rider.Elevation), 150f);
-            Stat(ref x, 10f, "DIST", Units.DistanceText(Rider.Distance), 170f);
+            Stat(ref x, 10f, "ELEV", Units.ElevationText(Rider.Elevation));
+            Stat(ref x, 10f, "CLIMBED", Units.ElevationText(Rider.ElevationGain));
+            Stat(ref x, 10f, "DIST", Units.DistanceText(Rider.Distance));
+            Stat(ref x, 10f, "TIME", Clock(Rider.RideTime));
 
             // --- segment name ---
             GUI.Label(new Rect(18f, 88f, 520f, 26f), Rider.SegmentName, _segment);
