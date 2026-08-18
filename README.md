@@ -19,6 +19,28 @@ simulation parameters — so the flywheel gets physically harder on the climbs.
 imperial, saves and loads named worlds, and **Regenerate** rebuilds the entire
 world — terrain, course, road and scenery — from a new seed in about six seconds.*
 
+## Download
+
+Built macOS builds are published on the
+[Releases page](https://github.com/thepaulm/viberide/releases) — universal
+(Apple Silicon + Intel), no Unity required.
+
+```bash
+# unzip, then, once:
+bash setup.sh
+```
+
+Then open `VibeRide.app`. The setup script restores the executable bit (a zip
+built on Windows cannot carry it), clears the Gatekeeper quarantine flag,
+re-signs the app so macOS can attach a Bluetooth permission to it, and builds the
+Python environment the trainer bridge needs. Full detail in `START_HERE.md`
+inside the zip.
+
+The binary is attached to a release rather than committed: a 45 MB zip added on
+every build would grow the repository without bound, and git stores no useful
+diff between two builds of the same app. Each zip carries a `VERSION.txt` naming
+the commit it came from.
+
 The app is **VibeRide**; the repository folder and the internal code namespaces
 (`KickrWorld` in C#, `kickr_bridge` in Python) still carry the original working
 name. Renaming those is a mechanical but wide change and was left alone
