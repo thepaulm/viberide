@@ -34,8 +34,11 @@ unity/Assets/Scenes.meta
 # --- Build output and debugging artefacts ---
 unity/Captures/
 *.log
-VibeRide-mac-*.zip
-KickrWorld-mac-*.zip
+# Any packaged build. The first pattern here was VibeRide-mac-*.zip, which
+# did not match the versioned name the release script produces
+# (VibeRide-0.1.0-mac-universal.zip) -- and a 45 MB zip went into history.
+VibeRide-*.zip
+KickrWorld-*.zip
 report
 report-*
 crash-*.txt
