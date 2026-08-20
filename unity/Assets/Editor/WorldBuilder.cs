@@ -227,6 +227,12 @@ namespace KickrWorld.EditorTools
             shot.Scatter = scatter;
             shot.Flyby = flyby;
 
+            var statue = world.AddComponent<HilltopStatue>();
+            statue.World = rideWorld;
+            statue.Terrain = terrain;
+            regen.Statue = statue;
+            shot.Statue = statue;
+
             BuildLighting();
             AssertNoMissingScripts();
 

@@ -18,6 +18,12 @@ namespace KickrWorld
         public TrainerLink Link;
         public Transform Bike;
 
+        [Tooltip("Hold position on the course. Capture and test modes set this so " +
+                 "a shot frames the point that was chosen rather than wherever the " +
+                 "rider has freewheeled to while the camera settled -- on a fast " +
+                 "descent that is 90 m in five seconds.")]
+        public bool Frozen;
+
         [Header("Fallback control (no bridge running)")]
         public bool AllowKeyboard = true;
         public float KeyboardPower = 240f;
@@ -96,6 +102,7 @@ namespace KickrWorld
                 _speed = _fallback.Step(watts, Grade, dt);
             }
 
+            if (Frozen) _speed = 0f;
             _distance = route.Wrap(_distance + _speed * dt);
 
             // Gradient a little way ahead of the wheels, averaged over the

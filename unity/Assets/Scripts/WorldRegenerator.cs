@@ -20,6 +20,7 @@ namespace KickrWorld
         public MeshFilter RoadMeshFilter;
         public BikeRider Rider;
         public PropScatter Scatter;
+        public HilltopStatue Statue;
 
         [Tooltip("Heightmap rows per frame. Lower is smoother but slower overall.")]
         public int RowsPerFrame = 48;
@@ -176,6 +177,16 @@ namespace KickrWorld
                 // slope, so doing it earlier would plant everything on the old
                 // landscape.
                 Scatter.Rebuild(route, seed);
+            }
+
+            if (Statue != null)
+            {
+                // After the terrain, for the same reason as the scenery: the
+                // summit search reads heights straight off the Terrain, so running
+                // it any earlier finds a peak on the landscape we just replaced.
+                Stage = "Raising the monument";
+                yield return null;
+                Statue.Rebuild(route, seed);
             }
 
             // A new world is a new ride: distance, climbing and clock all restart.

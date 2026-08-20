@@ -7,6 +7,7 @@ how to get it.
 
 - [Architecture](#architecture) — why the bridge is a separate process
 - [Scenery](#scenery) — seed-driven prop placement
+- [The hilltop monument](#the-hilltop-monument) — finding a summit worth putting it on
 - [In-app menu](#in-app-menu) — units, regenerate, save/load
 - [The world](#the-world) — course generation and its constraints
 - [Running on macOS](#running-on-macos) — building, packaging, releasing
@@ -171,6 +172,102 @@ the crossing point instead of waiting out a 1.4 km approach.
 
 The aeroplane is built from primitives. `PlanePrefab` takes a real model instead,
 normalised by measured bounds to `TargetWingspan` the same way scenery is.
+
+## The hilltop monument
+
+One cyclist monument stands on a summit overlooking every course, arms up in a
+finish-line salute -- the kind of thing real mountains collect, like Simpson on
+the Ventoux or Pantani at the Mortirolo.
+
+It is not scenery. `PropScatter` throws hundreds of objects near the road at
+random offsets, which is right for trees and wrong for a landmark: a landmark has
+to be the same rock every lap, visible from a long way out, somewhere that looks
+chosen. `HilltopStatue` therefore searches the generated terrain instead of
+sampling it.
+
+### Finding the summit
+
+Seed points are thrown out sideways from the road at 320-1500 m, then
+**hill-climbed** -- walk to the highest of eight neighbours, coarse steps first
+(90 m, then 45 m, then 22 m) so shallow ground is crossed quickly and the top is
+settled on precisely. Many seeds converge on the same hill, so results are
+rounded onto a 150 m grid and de-duplicated. About 960 seeds yield 20-40 distinct
+summits.
+
+Seeding from the route rather than sweeping the whole 10 km map is both cheaper
+and better targeted: a spectacular peak in the far corner of the terrain is not a
+landmark for this ride, because you never see it.
+
+Each surviving summit is then measured:
+
+| Measure | Why |
+| --- | --- |
+| Prominence | Height above the **mean** of a ring at 260 m. The mean is what separates a peak from a point partway up a slope -- max or min would not |
+| Rise above the road | It has to be above you to be a hilltop |
+| Visible viewpoints | Sweeping the approach at 50 m intervals, counting those with clear line of sight, within 34 degrees of straight ahead and under 11 degrees up |
+
+The visibility sweep is the part that matters, and it is the whole reason the
+component measures rather than assumes. The closest qualifying viewpoint becomes
+`BestViewDistance`, which `-startnearstatue` uses directly.
+
+### Four ways to place a statue nobody can see
+
+| Attempt | What happened |
+| --- | --- |
+| Score by raw prominence | Elected the biggest mountain on the map: 1128 m above the road, 1160 m away, **44 degrees up** -- magnificent, permanently off the top of the frame |
+| Line of sight from the nearest road point | The nearest point is 90 degrees off the direction you look. Cleared it there and put the monument squarely behind a nearer ridge |
+| Framing computed separately in the capture code | Two places deciding what "visible" means, only one checking line of sight |
+| Elevation capped at 24 degrees by FOV arithmetic | Ignored that the chase camera looks ~9 degrees **down** and the stat bar covers the top 78 px. Base landed at viewport y 0.94 -- on screen by the maths, behind the HUD in fact |
+
+Prominence now saturates at 110 m: past that a summit already reads as a mountain
+top and extra height is a liability, because at a fixed elevation angle the
+viewing distance scales with the rise. A hill twice as high is seen from twice as
+far and looks no bigger -- it just gets harder to fit in frame.
+
+### The sculpture
+
+Built from primitives, normalised by measured bounds to `TotalHeight` (50 m), the
+same way the aircraft and the scenery are. `StatuePrefab` takes a real model
+instead.
+
+Three things had to be measured rather than eyeballed:
+
+- **Thickness.** A 30 mm bicycle tube scaled to 50 m is under half a metre and
+  renders as nothing. Everything is at monument gauge, not bicycle gauge.
+- **Angle.** The two halves want opposite views. A bike is legible side-on and
+  vanishes head-on; the raised arms spread *across* the bike's axis and so vanish
+  exactly when the bike looks best. Dead broadside produced a perfect bicycle
+  under a figure that read as a stick. It now stands at 58 degrees to the
+  viewpoint -- the bike keeps 85% of its length, the arms open to 53% -- and the
+  hands are carried forward of the shoulders so the salute has a diagonal to
+  trace from the side.
+- **Plinth height.** Kept under a third of the total. Whatever goes into the base
+  is height not spent on the part that has to be recognisable from half a
+  kilometre away.
+
+A buried footing is added *after* normalisation, deep enough to reach the lowest
+ground the base overhangs, so it cannot contribute to the measured height. On the
+downhill side it shows as a retaining wall, which is what a real hilltop terrace
+looks like. Dropping the whole plinth to that lowest point instead -- the first
+attempt -- sank it by however much a steep summit falls away, which was most of
+the plinth, with the peak poking up in front of it.
+
+### Checking it
+
+`-statueportrait` parks the camera beside the monument (`-portraitrange`,
+`-portraitangle`). Judging a model from a 70 px smudge on a hillside is
+guesswork; this separates "is the sculpture any good" from "is it placed and
+framed well", which are two different bugs with two different fixes.
+
+`-startnearstatue` jumps the rider to `BestViewDistance` and logs the monument's
+viewport position, apparent pixel height, and whether its head clears the stat
+bar. Capture modes also set `BikeRider.Frozen`, because otherwise the rider
+freewheels downhill while the camera settles -- measured at 90 m over a five
+second delay, enough to swing the subject from mid-frame to behind the HUD.
+
+The search costs about 190 ms, once, inside the regenerate that already takes
+around six seconds. Placement is fully seed-determined, which it has to be: a
+saved world stores only its seed.
 
 ## In-app menu
 
