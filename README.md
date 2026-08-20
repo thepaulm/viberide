@@ -20,6 +20,15 @@ saved by name.
 Every minute or two an aircraft crosses the sky ahead of you, trailing a
 contrail. Never in quite the same place twice.
 
+## And a Monument on the Hill
+
+![A cyclist monument standing on a summit above the road](docs/statue.png)
+
+Every world puts one statue on a hilltop overlooking the course: a rider out of
+the saddle with both arms up, the kind of thing real mountains collect. It is
+not scattered at random — the terrain is searched for a summit that is properly
+prominent, close enough to make out, and genuinely in view from the road.
+
 ## Download
 
 Grab the latest build from the
