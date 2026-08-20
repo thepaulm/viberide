@@ -13,6 +13,13 @@ gradients, the road, and the scenery scattered across it. **Regenerate** gives y
 a completely different ride in about six seconds, and worlds you like can be
 saved by name.
 
+## Now with Airplanes!
+
+![An aircraft crossing the sky, trailing a contrail](docs/airplane.png)
+
+Every minute or two an aircraft crosses the sky ahead of you, trailing a
+contrail. Never in quite the same place twice.
+
 ## Download
 
 Grab the latest build from the
