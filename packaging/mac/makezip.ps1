@@ -41,7 +41,10 @@ $check = [System.IO.Compression.ZipFile]::OpenRead($Zip)
 $bad = @($check.Entries | Where-Object { $_.FullName.Contains($sep) }).Count
 Write-Output "entries containing a backslash: $bad"
 Write-Output "launcher entry: $(($check.Entries | Where-Object { $_.FullName -like '*Contents/MacOS/*' } | Select-Object -First 1).FullName)"
-Write-Output "bridge entries: $(@($check.Entries | Where-Object { $_.FullName -like 'bridge/*' }).Count)"
+# The bridge lives inside the bundle, not at the top level -- it moved there when
+# the app took over spawning it. Matching 'bridge/*' reported 0 on every healthy
+# release and would have made a genuinely broken one indistinguishable.
+Write-Output "bridge entries: $(@($check.Entries | Where-Object { $_.FullName -like '*/Contents/Resources/bridge/*' }).Count)"
 $check.Dispose()
 
 $mb = [math]::Round((Get-Item $Zip).Length / 1MB, 1)
