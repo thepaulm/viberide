@@ -210,6 +210,10 @@ namespace KickrWorld.EditorTools
             menu.World = rideWorld;
             hud.Menu = menu;
 
+            var flyby = world.AddComponent<PlaneFlyby>();
+            flyby.Rider = rider;
+            flyby.Terrain = terrain;
+
             var shot = world.AddComponent<AutoScreenshot>();
             shot.Rider = rider;
             shot.Regenerator = regen;
@@ -221,6 +225,7 @@ namespace KickrWorld.EditorTools
             AssignPropModels(scatter);
             regen.Scatter = scatter;
             shot.Scatter = scatter;
+            shot.Flyby = flyby;
 
             BuildLighting();
             AssertNoMissingScripts();

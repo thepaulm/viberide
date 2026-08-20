@@ -23,6 +23,7 @@ namespace KickrWorld
         public BikeRider Rider;
         public WorldRegenerator Regenerator;
         public PropScatter Scatter;
+        public PlaneFlyby Flyby;
 
         void Start() => StartCoroutine(Run());
 
@@ -76,6 +77,14 @@ namespace KickrWorld
             {
                 Rider.Jump(startDistance);
                 Debug.Log($"[AutoScreenshot] jumped rider to {startDistance:F0} m");
+            }
+
+            // Trigger a flyby only now that the rider is in place, with a short
+            // run-in so it reaches the crossing point within the shot delay.
+            if (System.Array.IndexOf(Environment.GetCommandLineArgs(), "-flyby") >= 0 && Flyby != null)
+            {
+                Flyby.TriggerNow(Num("-flybyapproach", 420f));
+                Debug.Log("[AutoScreenshot] flyby triggered");
             }
 
             float delay = Num("-shotdelay", 20f);

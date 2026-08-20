@@ -141,6 +141,37 @@ Three things that were wrong on the first attempt, all worth not re-introducing:
   `GroundSink` the kind asks for — rocks look wrong perched on the surface, trees
   look wrong sunk into it.
 
+## Aircraft flyby
+
+Every 50-160 seconds an aircraft crosses the sky ahead of the rider, trailing a
+contrail.
+
+Unlike scenery, this is **deliberately not seeded**. Placement has to be
+reproducible because a saved world stores only its seed, but a flyby is an event
+in time rather than a feature of the landscape -- the same plane appearing at the
+same second of every ride would read as a loop, not as weather.
+
+Getting it visible took measuring rather than guessing. The first three attempts
+put a plane on screen that nobody could see:
+
+| Attempt | What happened |
+| --- | --- |
+| Triggered at startup | Fired before the camera was positioned, a kilometre behind |
+| Crossing 250-700 m ahead at up to 340 m | ~26 degrees elevation, at the frame edge or behind the stat bar |
+| 14 m wingspan at ~900 m | Subtends 0.8 degrees -- about **14 pixels**, a speck against green mountains |
+
+Running the player with `-flyby` logs the aircraft's viewport coordinates each
+second, which is what finally showed it had been on screen the whole time and
+simply too small to notice. It now crosses 500-950 m ahead at 90-190 m with a
+26 m wingspan, roughly 30-50 px, and the contrail does most of the work of
+drawing the eye.
+
+`-flybyapproach <metres>` shortens the run-in so a screenshot can catch it near
+the crossing point instead of waiting out a 1.4 km approach.
+
+The aeroplane is built from primitives. `PlanePrefab` takes a real model instead,
+normalised by measured bounds to `TargetWingspan` the same way scenery is.
+
 ## In-app menu
 
 Bottom-left, or press **Escape**:
