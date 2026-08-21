@@ -73,6 +73,14 @@ namespace KickrWorld.EditorTools
 
             Log("Building heightmap...");
             var heights = WorldGen.BuildHeightmap(settings, route, distField, elevField);
+
+            // Lakes are cut into the heightmap, not placed on it, so this runs
+            // before the terrain is created -- and before the height stats below,
+            // which would otherwise describe a landscape about to change.
+            Log("Planning lakes...");
+            var lakes = LakeGen.Plan(settings, route, heights);
+            LakeGen.Carve(settings, heights, lakes);
+
             LogHeightStats(heights, settings);
             LogRoadGrade(route);
             LogTransect(heights, settings, route);
@@ -96,7 +104,7 @@ namespace KickrWorld.EditorTools
                     $"tile={l.tileSize.x:F0}");
 
             Log("Painting splatmap...");
-            var splat = WorldGen.BuildSplatmap(settings, data, distField, 512);
+            var splat = WorldGen.BuildSplatmap(settings, data, distField, 512, lakes);
             if (DebugAllRock)
             {
                 Log("  DEBUG: overriding splatmap to 100% rock");
@@ -233,6 +241,15 @@ namespace KickrWorld.EditorTools
             regen.Statue = statue;
             shot.Statue = statue;
 
+            var water = world.AddComponent<LakeSurfaces>();
+            water.Terrain = terrain;
+            AssignBoatModels(water);
+            regen.Water = water;
+            shot.Water = water;
+            // The baked terrain already holds the carved basins; the water and
+            // boats for them are built at startup from this stored list.
+            water.SetSites(lakes, settings.Seed);
+
             BuildLighting();
             AssertNoMissingScripts();
 
@@ -253,6 +270,27 @@ namespace KickrWorld.EditorTools
         /// Anything missing is reported and simply falls back to a placeholder,
         /// so a partial import degrades rather than breaking the build.
         /// </summary>
+        /// <summary>Boats, loaded the way scenery is: LakeSurfaces is runtime
+        /// code and cannot touch AssetDatabase.</summary>
+        static void AssignBoatModels(LakeSurfaces water)
+        {
+            water.SailboatPrefabs = LoadModels("Boats/ship-small");
+            water.RowboatPrefabs = LoadModels("Boats/boat-row-small", "Boats/boat-row-large");
+            Log($"  boats: {water.SailboatPrefabs.Count} sail, {water.RowboatPrefabs.Count} row");
+        }
+
+        static List<GameObject> LoadModels(params string[] relative)
+        {
+            var found = new List<GameObject>();
+            foreach (var rel in relative)
+            {
+                var asset = AssetDatabase.LoadAssetAtPath<GameObject>($"Assets/Models/{rel}.fbx");
+                if (asset != null) found.Add(asset);
+                else Log($"  MISSING model Assets/Models/{rel}.fbx");
+            }
+            return found;
+        }
+
         static void AssignPropModels(PropScatter scatter)
         {
             var wanted = new Dictionary<string, string[]>

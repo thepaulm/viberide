@@ -361,7 +361,8 @@ namespace KickrWorld
         /// mountains read correctly without hand painting.
         /// </summary>
         public static float[,,] BuildSplatmap(WorldSettings s, TerrainData data,
-                                              float[,] distField, int res = 512)
+                                              float[,] distField, int res = 512,
+                                              System.Collections.Generic.List<LakeSite> lakes = null)
         {
             int fres = s.FieldResolution;
             var map = new float[res, res, 4];
@@ -421,7 +422,52 @@ namespace KickrWorld
                     map[z, x, 3] = road / sum;
                 }
             }
+            PaintLakeShores(s, map, res, lakes);
             return map;
+        }
+
+        /// <summary>
+        /// Shingle around the waterline. Grass running straight into water looks
+        /// like a flooded lawn; a band of rock reads as a shore and, incidentally,
+        /// disguises the seam where the water mesh tucks under the bank.
+        /// </summary>
+        static void PaintLakeShores(WorldSettings s, float[,,] map, int res,
+                                    System.Collections.Generic.List<LakeSite> lakes)
+        {
+            if (lakes == null || lakes.Count == 0) return;
+            float step = s.TerrainSize / (res - 1);
+
+            foreach (var lake in lakes)
+            {
+                float outer = LakeGen.Extent(lake) + 10f;
+                int x0 = Mathf.Max(0, Mathf.FloorToInt((lake.Centre.x - outer) / step));
+                int x1 = Mathf.Min(res - 1, Mathf.CeilToInt((lake.Centre.x + outer) / step));
+                int z0 = Mathf.Max(0, Mathf.FloorToInt((lake.Centre.y - outer) / step));
+                int z1 = Mathf.Min(res - 1, Mathf.CeilToInt((lake.Centre.y + outer) / step));
+
+                for (int z = z0; z <= z1; z++)
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        float dx = x * step - lake.Centre.x;
+                        float dz = z * step - lake.Centre.y;
+                        float d = Mathf.Sqrt(dx * dx + dz * dz);
+                        float edge = LakeGen.RadiusAt(lake, Mathf.Atan2(dz, dx));
+
+                        // From a little inside the waterline out to the top of the
+                        // bank, faded so the band has no hard outer border.
+                        float band = (d - (edge - 12f)) / 46f;
+                        if (band < 0f || band > 1f) continue;
+                        float strength = 1f - Mathf.SmoothStep(0f, 1f, band);
+
+                        map[z, x, 0] *= 1f - strength;
+                        map[z, x, 1] = map[z, x, 1] * (1f - strength) + strength;
+                        map[z, x, 2] *= 1f - strength;
+
+                        float sum = map[z, x, 0] + map[z, x, 1] + map[z, x, 2] + map[z, x, 3];
+                        if (sum > 0.0001f)
+                            for (int l = 0; l < 4; l++) map[z, x, l] /= sum;
+                    }
+            }
         }
 
         // --- road ribbon ----------------------------------------------------

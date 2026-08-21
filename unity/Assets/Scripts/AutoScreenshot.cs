@@ -25,6 +25,7 @@ namespace KickrWorld
         public PropScatter Scatter;
         public PlaneFlyby Flyby;
         public HilltopStatue Statue;
+        public LakeSurfaces Water;
 
         void Start() => StartCoroutine(Run());
 
@@ -86,6 +87,19 @@ namespace KickrWorld
                           $"monument in view over {Statue.VisibleRoadMetres:F0} m of road");
             }
 
+            // -startnearlake [n] frames a lake the same way, asking the lake
+            // itself where it can be seen from.
+            if (Flag("-startnearlake") && Water != null && Water.LakeCount > 0 &&
+                Statue != null && Statue.World != null && Statue.World.Route != null)
+            {
+                int which = Mathf.Clamp(Mathf.RoundToInt(Num("-startnearlake", 0f)),
+                                        0, Water.LakeCount - 1);
+                if (Water.TryBestView(Statue.World.Route, which, out float lakeView))
+                    startDistance = lakeView;
+                else
+                    Debug.LogWarning($"[AutoScreenshot] lake {which} has no clear view");
+            }
+
             if (startDistance >= 0f && Rider != null)
             {
                 Rider.Jump(startDistance);
@@ -98,7 +112,7 @@ namespace KickrWorld
             // 90 m of drift over a five second delay, enough to swing the subject
             // from mid-frame to behind the stat bar.
             if (Rider != null && (Flag("-holdstill") || Flag("-startnearstatue") ||
-                                  Flag("-statueportrait")))
+                                  Flag("-statueportrait") || Flag("-startnearlake")))
                 Rider.Frozen = true;
 
             // Trigger a flyby only now that the rider is in place, with a short
@@ -131,6 +145,28 @@ namespace KickrWorld
                 }
             }
 
+            // -lakeportrait looks down on a lake from above. Same reason as the
+            // statue portrait: it separates "does the water render and does the
+            // basin look right" from "can you see it from the road", which are
+            // different failures wanting different fixes.
+            if (Flag("-lakeportrait") && Water != null && Water.LakeCount > 0)
+            {
+                int which = Mathf.Clamp(Mathf.RoundToInt(Num("-lakeportrait", 0f)),
+                                        0, Water.LakeCount - 1);
+                var lk = Water.Lakes[which];
+                var cam = Camera.main;
+                var chase = cam != null ? cam.GetComponent<ChaseCamera>() : null;
+                if (chase != null) chase.enabled = false;
+                if (cam != null)
+                {
+                    var aim = new Vector3(lk.Centre.x, lk.WaterLevel, lk.Centre.y);
+                    float height = Num("-lakeheight", 260f);
+                    cam.transform.position = aim + new Vector3(0f, height, -height * 0.75f);
+                    cam.transform.LookAt(aim);
+                    Debug.Log($"[AutoScreenshot] lake portrait {which} from {height:F0} m up");
+                }
+            }
+
             float delay = Num("-shotdelay", 20f);
             Debug.Log($"[AutoScreenshot] capturing to {path} in {delay:F0}s");
             yield return new WaitForSeconds(delay);
@@ -160,6 +196,21 @@ namespace KickrWorld
                               $"from top ({(headFromTop > statBar ? "clears" : "BEHIND")} stat bar), " +
                               $"{(onScreen ? "ON SCREEN" : "OFF SCREEN")}");
                 }
+            }
+
+            if (Water != null && Water.LakeCount > 0)
+            {
+                var cam = Camera.main;
+                for (int i = 0; i < Water.LakeCount && cam != null; i++)
+                {
+                    var lk = Water.Lakes[i];
+                    var centre = new Vector3(lk.Centre.x, lk.WaterLevel, lk.Centre.y);
+                    Vector3 vp = cam.WorldToViewportPoint(centre);
+                    bool onScreen = vp.z > 0f && vp.x > 0f && vp.x < 1f && vp.y > 0f && vp.y < 1f;
+                    Debug.Log($"[AutoScreenshot] lake {i} centre viewport ({vp.x:F2},{vp.y:F2}) " +
+                              $"depth {vp.z:F0} m, {(onScreen ? "ON SCREEN" : "off screen")}");
+                }
+                Debug.Log($"[AutoScreenshot] {Water.SurfaceReport()}");
             }
 
             ScreenCapture.CaptureScreenshot(path);

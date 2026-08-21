@@ -21,6 +21,7 @@ namespace KickrWorld
         public BikeRider Rider;
         public PropScatter Scatter;
         public HilltopStatue Statue;
+        public LakeSurfaces Water;
 
         [Tooltip("Heightmap rows per frame. Lower is smoother but slower overall.")]
         public int RowsPerFrame = 48;
@@ -115,6 +116,14 @@ namespace KickrWorld
                 yield return null;
             }
 
+            // Lakes are cut into the heightmap, so they have to be planned and
+            // carved while it is still a plain array. Once SetHeights has run the
+            // basin would have to be dug out of live TerrainData instead.
+            Stage = "Filling lakes";
+            yield return null;
+            var lakes = LakeGen.Plan(settings, route, builder.Heights);
+            LakeGen.Carve(settings, builder.Heights, lakes);
+
             Stage = "Applying terrain";
             yield return null;
             var data = Terrain.terrainData;
@@ -127,7 +136,7 @@ namespace KickrWorld
             Stage = "Painting ground";
             yield return null;
             int splatRes = data.alphamapResolution;
-            var splat = WorldGen.BuildSplatmap(settings, data, distField, splatRes);
+            var splat = WorldGen.BuildSplatmap(settings, data, distField, splatRes, lakes);
             data.SetAlphamaps(0, 0, splat);
 
             // Editing a TerrainData in place at runtime leaves the basemap -- the
@@ -177,6 +186,15 @@ namespace KickrWorld
                 // slope, so doing it earlier would plant everything on the old
                 // landscape.
                 Scatter.Rebuild(route, seed);
+            }
+
+            if (Water != null)
+            {
+                // After the terrain is live, so the water sits on the basin that
+                // actually exists rather than the one that was about to.
+                Stage = "Launching boats";
+                yield return null;
+                Water.Rebuild(lakes, seed);
             }
 
             if (Statue != null)

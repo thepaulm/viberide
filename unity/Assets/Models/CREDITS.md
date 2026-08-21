@@ -10,6 +10,7 @@ and so anyone auditing the repository can confirm redistribution is permitted.
 | `Cars/` | [Car Kit](https://kenney.nl/assets/car-kit) | Kenney | CC0 1.0 | 2026-08-18 |
 | `City/` | [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial) | Kenney | CC0 1.0 | 2026-08-18 |
 | `Dinosaurs/` | [Animated Dinosaur Pack](https://quaternius.com/packs/animateddinosaurs.html) | Quaternius | CC0 1.0 | 2026-08-18 |
+| `Boats/` | [Pirate Kit](https://kenney.nl/assets/pirate-kit) | Kenney | CC0 1.0 | 2026-08-21 |
 
 Licence text: https://creativecommons.org/publicdomain/zero/1.0/
 

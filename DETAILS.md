@@ -8,6 +8,7 @@ how to get it.
 - [Architecture](#architecture) — why the bridge is a separate process
 - [Scenery](#scenery) — seed-driven prop placement
 - [The hilltop monument](#the-hilltop-monument) — finding a summit worth putting it on
+- [Lakes and boats](#lakes-and-boats) — carved basins, and why they are hard to see
 - [In-app menu](#in-app-menu) — units, regenerate, save/load
 - [The world](#the-world) — course generation and its constraints
 - [Running on macOS](#running-on-macos) — building, packaging, releasing
@@ -268,6 +269,80 @@ second delay, enough to swing the subject from mid-frame to behind the HUD.
 The search costs about 190 ms, once, inside the regenerate that already takes
 around six seconds. Placement is fully seed-determined, which it has to be: a
 saved world stores only its seed.
+
+## Lakes and boats
+
+Lakes are cut **into** the heightmap before it reaches Unity, unlike everything
+else in this world, which is placed on top of it. Water is a horizontal plane, so
+what makes a lake read as a lake is that the ground meets it at one height all
+the way round; that is a property of the terrain, not of an object standing on it.
+
+`LakeGen` plans and carves; `LakeSurfaces` builds the water mesh and puts boats on
+it. Both call `LakeGen.RadiusAt` for the shoreline — an ellipse laid along the
+road, pushed around by two low harmonics so it is not a stadium oval. They are two
+descriptions of one edge, and if they disagree the water either floats over the
+bank or leaves a rim of dry bed around itself.
+
+Boats are Kenney CC0 models: a small sailing ship and two rowboats, normalised by
+measured length the way the aircraft and scenery are. They follow an elliptical
+track scaled to the lake, bob, and heel, all seeded.
+
+### Finding somewhere to put water
+
+The first planner hunted for round patches of naturally flat ground. It found
+almost none: this terrain is bulldozed flat inside the road corridor and is
+mountain everywhere else, so the search had to relax to 50 m of relief before it
+placed anything — which is not flat, it is a hillside. Pegging the surface to the
+road instead and carving whatever stood in the way produced a **339 m deep pit**
+mined into a mountainside.
+
+What works is to find a stretch of road that does not climb, lay the lake along
+it, and take the surface from the ground that is actually there, with a cap on how
+much rock the carve may remove. The planner now reports a tally of why candidates
+were rejected, which is the only reason the failure modes above were findable at
+all.
+
+### Why they are hard to see, and the arithmetic
+
+A lake looks right from above and is very nearly invisible from the saddle. This
+is geometry, not a bug, and it is worth writing down because every instinct about
+how to fix it is wrong.
+
+A horizontal surface seen from height `E` above it at range `X` subtends about
+`E / X` radians. The rider's eye is ~2 m above the road, so at 200 m a lake
+subtends 0.57 degrees — about **10 pixels** — no matter how large the lake is.
+Size does not enter into it.
+
+Nor does depth, which is the counter-intuitive part. The road sits on ground
+flattened to its own level for some width `A` before the terrain is free to
+descend. Sighting across that apron, a surface `D` below the road is hidden until
+
+    X  >=  A * (E + D) / E
+
+so with the 45 m apron the first version left, a lake 15 m down was hidden until
+337 m away, and every lake it placed sat comfortably inside that shadow. Deeper
+water pushes the shadow out faster than it buys viewing angle.
+
+| Attempt | Result |
+| --- | --- |
+| 3.5 m below a level road | Renderer reported it on screen; it covered no pixels, being edge-on |
+| 22 m below, 200 m out | Hidden behind its own apron; the boat masts showed above the bank, floating on grass |
+| Surface pegged to the road | 339 m pit cut into a mountain |
+| Water brought to grade, carve run to a 16 m shoulder | Visible — as a band roughly 10-30 px deep |
+
+The measurements were only possible because the capture harness reports the
+lake's viewport position, the renderer state, and how many of 41 sampled points on
+the water have clear line of sight. `-lakeportrait` looks straight down at a lake,
+which is what separated "the water does not render" from "the water renders and
+you cannot see it" — two failures that look identical from the road.
+
+### What would actually fix it
+
+Seeing water properly needs the rider roughly 10 m above it, which means the road
+running along a shelf **above** the lake. Today `WorldGen` flattens 120 m either
+side of the road to road level, so there is no such shelf anywhere. Giving the
+corridor an asymmetric fall-off — letting the ground drop away on one side — is
+the real fix, and it is a change to terrain generation rather than to lakes.
 
 ## In-app menu
 
