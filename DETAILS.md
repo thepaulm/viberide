@@ -9,6 +9,7 @@ how to get it.
 - [Scenery](#scenery) — seed-driven prop placement
 - [The hilltop monument](#the-hilltop-monument) — finding a summit worth putting it on
 - [Lakes and boats](#lakes-and-boats) — carved basins, and why they are hard to see
+- [The falling side](#the-falling-side) — why the road corridor is no longer symmetric
 - [In-app menu](#in-app-menu) — units, regenerate, save/load
 - [The world](#the-world) — course generation and its constraints
 - [Running on macOS](#running-on-macos) — building, packaging, releasing
@@ -336,13 +337,64 @@ the water have clear line of sight. `-lakeportrait` looks straight down at a lak
 which is what separated "the water does not render" from "the water renders and
 you cannot see it" — two failures that look identical from the road.
 
-### What would actually fix it
+### Where it ended up
 
-Seeing water properly needs the rider roughly 10 m above it, which means the road
-running along a shelf **above** the lake. Today `WorldGen` flattens 120 m either
-side of the road to road level, so there is no such shelf anywhere. Giving the
-corridor an asymmetric fall-off — letting the ground drop away on one side — is
-the real fix, and it is a change to terrain generation rather than to lakes.
+The corridor now has [a falling side](#the-falling-side), which was the real fix,
+and water is visible from the road where it was not before. It still reads as a
+band rather than as a lake — see that section for why, and for what is left.
+
+## The falling side
+
+`WorldGen` used to flatten 120 m either side of the road to road level. That made
+the whole world a shelf, and it is why the rider so often seems to be riding along
+the floor of a trough. It also made water impossible to see, which is how it came
+to be noticed at all.
+
+Now one side falls away. `BuildRoadField` emits a third field alongside distance
+and elevation: a signed value saying which side of the road each texel is on,
+multiplied by a slow noise of world position so the drop wanders from one side to
+the other over a couple of kilometres rather than pinning itself to the left for
+the whole lap.
+
+Three things about it are worth recording, because none of them were obvious.
+
+**The shelf is a ceiling, not a subtraction.** Taking a fixed drop off a hillside
+that is already rising still leaves a hillside. Worse, because the bench edge is
+pulled in on that side, the natural relief blended in from 15 m instead of 40 and
+built a wall at the rider's elbow. Capping with `Min(h, shelf)` means the ground
+can only ever fall here, and where it is naturally lower it is left alone.
+
+**The lip distance is the whole game.** How far down the rider can see is set by
+eye height over the distance to the point where the ground stops being level —
+call them `E` and `A`. The steepest depression available is `E / A`, whatever the
+terrain does further out. At the old 40 m bench that is 3 degrees; at 15 m it is
+7.5; at 10 m it is 13, which is enough to look into a valley. So the open side
+keeps a shoulder of a few metres and then drops, which is what a mountain road
+has. Depth beyond that buys nothing on its own: a surface `D` below is hidden out
+to `A(E + D) / E`, so digging deeper pushes the shadow out faster than it gains
+angle.
+
+**`Mathf.SmoothStep(a, b, t)` is not `smoothstep(edge0, edge1, x)`.** Unity's
+version interpolates *between* a and b by t. Passing a distance as `t` returned
+`b` for every point on the map, so the ease-out term was about −287, `Mathf.Lerp`
+clamped that to zero, and the shelf silently never applied. Three different noise
+settings in a row produced byte-identical terrain before the tally that measured
+"how much of the corridor has a decisive side" made it obvious the fault was
+downstream of the field.
+
+Measured over a whole course, the ground within 160 m of the road now falls a
+median of **31 m** on the open side, against 0 m before.
+
+### What is left
+
+Lakes are visible from the road now and were not before, but they read as a band
+of water rather than as a lake. Filling more of the frame needs the water to span
+from the shadow edge (~160 m) out to several hundred metres, which needs a shelf
+several hundred metres wide — effectively a broad valley floor beside the road.
+That was tried at 2-4x the corridor radius and measured worse, because past the
+corridor the shelf fades, natural ground returns, and the lake ends up both
+further away and behind terrain. Making it work would mean widening the shelf far
+enough to hold a 400 m lake, which would flatten a large fraction of the world.
 
 ## In-app menu
 

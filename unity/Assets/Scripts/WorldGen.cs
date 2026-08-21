@@ -33,6 +33,19 @@ namespace KickrWorld
         // relief-suppressed transition -- and that zone is most of what fills the
         // screen from the saddle. Too wide and every ride is down a green runway.
         public float CorridorRadius = 120f;
+
+        /// <summary>
+        /// Metres the ground falls away on the open side of the road by the edge
+        /// of the corridor.
+        ///
+        /// The corridor used to flatten both sides to road level for 120 m, which
+        /// made the whole world a shelf and, incidentally, made water impossible
+        /// to see: sighting across flat ground of width A from height E, anything
+        /// D below is hidden out to A(E+D)/E, and with A=40 m and an eye 2 m up
+        /// that put a lake 25 m down out of sight until 540 m away. One side now
+        /// drops instead, which is what a mountain road actually does.
+        /// </summary>
+        public float ValleyDrop = 32f;
         public float BenchRadius = 18f;          // fully flattened road bench
 
         // Terrain is cut slightly below the road surface. Discretisation of the
@@ -107,12 +120,26 @@ namespace KickrWorld
         /// neighbourhood is orders of magnitude cheaper than asking every one of
         /// four million texels which road point is nearest.
         /// </summary>
-        public static void BuildRoadField(WorldSettings s, RoutePath route, out float[,] dist, out float[,] elev)
+        /// <summary>
+        /// Distance to the road, the road elevation there, and which side of it
+        /// each texel lies on.
+        ///
+        /// The side field carries a signed value in roughly [-1, 1]: positive
+        /// where the ground should fall away, negative on the side that keeps its
+        /// hillside, zero along the road and wherever the two swap over. The swap
+        /// is driven by a slow noise of world position, so the drop wanders from
+        /// one side of the road to the other over kilometres instead of pinning
+        /// itself to the left for the whole lap.
+        /// </summary>
+        public static void BuildRoadField(WorldSettings s, RoutePath route,
+                                          out float[,] dist, out float[,] elev,
+                                          out float[,] side)
         {
             int res = s.FieldResolution;
             float texel = s.TerrainSize / (res - 1);
             dist = new float[res, res];
             elev = new float[res, res];
+            side = new float[res, res];
 
             float far = s.CorridorRadius * 2f;
             for (int i = 0; i < res; i++)
@@ -128,6 +155,19 @@ namespace KickrWorld
                 float d = k * step;
                 Vector2 p = route.HorizontalAt(d);
                 float e = route.ElevationAt(d);
+
+                Vector3 fwd = route.ForwardAt(d, 8f);
+                var lateral = new Vector2(fwd.z, -fwd.x).normalized;
+                // Which way the ground falls here. ~1.6 km wavelength, so a given
+                // stretch of road keeps its drop on one side long enough to read
+                // as landscape rather than as noise.
+                // Saturated hard on purpose. At a gentle gain the noise spends
+                // most of its time near zero, and measurement showed only 28% of
+                // the corridor getting a decisive side -- so half the road had no
+                // fall-off at all. Multiplying up makes the drop commit to one
+                // side and reserves the smooth part for the crossings.
+                float bias = Mathf.Clamp(Fbm(p.x + 4200f, p.y - 1700f, 2, 0.0004f, 2f, 0.5f) * 5f,
+                                         -1f, 1f);
 
                 int cx = Mathf.RoundToInt(p.x / texel);
                 int cz = Mathf.RoundToInt(p.y / texel);
@@ -148,10 +188,28 @@ namespace KickrWorld
                         {
                             dist[z, x] = dd;
                             elev[z, x] = e;
+                            // Signed offset across the road, saturating at 40 m so
+                            // the two sides separate quickly, times the local bias.
+                            float across = wx * lateral.x + wz * lateral.y;
+                            side[z, x] = Mathf.Clamp(across / 40f, -1f, 1f) * bias;
                         }
                     }
                 }
             }
+
+            // How much of the corridor actually has a side. If this is small the
+            // shelf can never bite, and no amount of staring at screenshots will
+            // say whether the cause is the bias, the field, or the profile.
+            int strong = 0, inside = 0;
+            for (int z = 0; z < res; z++)
+                for (int x = 0; x < res; x++)
+                {
+                    if (dist[z, x] >= s.CorridorRadius) continue;
+                    inside++;
+                    if (Mathf.Abs(side[z, x]) > 0.5f) strong++;
+                }
+            Debug.Log($"[WorldGen] side field: {100f * strong / Mathf.Max(1, inside):F0}% of the " +
+                      $"corridor has |side| > 0.5 ({inside} texels inside)");
         }
 
         /// <summary>
@@ -238,16 +296,18 @@ namespace KickrWorld
             public float Progress => Rows == 0 ? 1f : Done / (float)Rows;
 
             readonly WorldSettings _s;
-            readonly float[,] _dist, _elev, _regional;
+            readonly float[,] _dist, _elev, _side, _regional;
             readonly int _regRes, _fres, _res;
             readonly float _ox, _oz, _invSize, _texel;
 
             public HeightmapBuilder(WorldSettings s, RoutePath route,
-                                    float[,] distField, float[,] elevField, int regRes = 128)
+                                    float[,] distField, float[,] elevField,
+                                    float[,] sideField, int regRes = 128)
             {
                 _s = s;
                 _dist = distField;
                 _elev = elevField;
+                _side = sideField;
                 _regRes = regRes;
                 _regional = BuildRegionalField(s, route, regRes);
 
@@ -267,7 +327,7 @@ namespace KickrWorld
             public void Step(int rows)
             {
                 int end = Mathf.Min(Done + rows, Rows);
-                FillRows(_s, Heights, _dist, _elev, _regional, _regRes,
+                FillRows(_s, Heights, _dist, _elev, _side, _regional, _regRes,
                          _fres, _res, _ox, _oz, _invSize, _texel, Done, end);
                 Done = end;
             }
@@ -276,15 +336,16 @@ namespace KickrWorld
         }
 
         public static float[,] BuildHeightmap(WorldSettings s, RoutePath route,
-                                              float[,] distField, float[,] elevField)
+                                              float[,] distField, float[,] elevField,
+                                              float[,] sideField)
         {
-            var builder = new HeightmapBuilder(s, route, distField, elevField);
+            var builder = new HeightmapBuilder(s, route, distField, elevField, sideField);
             builder.Finish();
             return builder.Heights;
         }
 
         static void FillRows(WorldSettings s, float[,] heights,
-                             float[,] distField, float[,] elevField,
+                             float[,] distField, float[,] elevField, float[,] sideField,
                              float[,] regionalField, int regRes,
                              int fres, int res, float ox, float oz,
                              float invSize, float texel, int zStart, int zEnd)
@@ -300,13 +361,53 @@ namespace KickrWorld
                     float d = Sample(distField, fres, u, v);
                     float roadE = Sample(elevField, fres, u, v);
 
-                    float benchEdge = s.BenchRadius * 2.2f;
+                    // How much this point is on the falling side, 0..1.
+                    float valley = Mathf.Max(0f, Sample(sideField, fres, u, v));
+
+                    // The bench is the flat platform carrying the road, and its
+                    // outer edge is the lip that decides what can be seen from the
+                    // saddle. On the open side it is pulled in hard -- 40 m of
+                    // level ground beside you hides everything below it for
+                    // hundreds of metres, and shrinking the lip is worth more than
+                    // any amount of digging further out.
+                    // The lip distance A is the single number that decides how far
+                    // down the rider can see: the steepest depression available is
+                    // eye height over A, whatever happens further out. At the old
+                    // 40 m that is 3 degrees; at 15 m it is 7.5; at 9 m it is 13,
+                    // which is enough to look into a valley. So the open side gets
+                    // a shoulder of a few metres and then falls, which is what a
+                    // mountain road has.
+                    float benchInner = Mathf.Lerp(s.BenchRadius, s.BenchRadius * 0.30f, valley);
+                    float benchEdge = Mathf.Lerp(s.BenchRadius * 2.2f, s.BenchRadius * 0.55f, valley);
+
                     // Flat bench right at the road, fading out quickly.
                     float bench = 1f - Mathf.SmoothStep(0f, 1f,
-                        Mathf.Clamp01((d - s.BenchRadius) / (benchEdge - s.BenchRadius)));
+                        Mathf.Clamp01((d - benchInner) / (benchEdge - benchInner)));
                     // Relief grows in from the bench edge to full strength.
                     float reliefAmp = Mathf.SmoothStep(0f, 1f,
                         Mathf.InverseLerp(benchEdge, s.CorridorRadius, d));
+
+                    // Ground falling away past the bench on the open side, easing
+                    // back into the natural landscape well beyond the corridor so
+                    // there is no step where the two meet.
+                    float descent = Mathf.SmoothStep(0f, 1f,
+                        Mathf.InverseLerp(benchEdge, s.CorridorRadius, d));
+                    // Mathf.SmoothStep(a, b, t) interpolates BETWEEN a and b by t;
+                    // it is not the GLSL smoothstep(edge0, edge1, x). Passing the
+                    // distance as t returned 288 for every point on the map, so
+                    // easeOut was about -287, Lerp clamped that to zero, and the
+                    // shelf silently never applied -- three different bias values
+                    // in a row produced byte-identical terrain.
+                    // Full depth is held out to twice the corridor radius before
+                    // easing back into natural ground. The shelf has to be wide
+                    // enough to hold a lake at the distance the sightline needs:
+                    // clearing a lip at A with an eye E above it puts the nearest
+                    // visible water at A(E+D)/E, which for a 10 m lip and a 30 m
+                    // drop is 160 m out. A shelf that has already faded by then is
+                    // no use to anything standing on it.
+                    float easeOut = 1f - Mathf.SmoothStep(0f, 1f,
+                        Mathf.InverseLerp(s.CorridorRadius, s.CorridorRadius * 2.4f, d));
+                    float shelf = roadE - s.ValleyDrop * descent;
 
                     float nx = wx + ox, nz = wz + oz;
 
@@ -346,6 +447,17 @@ namespace KickrWorld
                     // road elevation so the two always meet cleanly.
                     float landscape = Sample(regionalField, regRes, u, v) + relief;
                     float h = Mathf.Lerp(roadE, landscape, reliefAmp);
+
+                    // On the open side the shelf is a CEILING, not a subtraction.
+                    // Subtracting a fixed drop from a hillside that is already
+                    // rising still leaves a hillside -- and because the bench edge
+                    // is pulled in on this side, the relief blended in from 15 m
+                    // instead of 40 and built a wall right at the rider's elbow.
+                    // Capping instead means the ground can only ever fall away
+                    // here, and where it is naturally lower it is left alone.
+                    if (valley > 0.001f)
+                        h = Mathf.Lerp(h, Mathf.Min(h, shelf), valley * easeOut);
+
                     h = Mathf.Lerp(h, roadE - s.BenchSink, bench);
 
                     heights[z, x] = Mathf.Clamp01(h / s.TerrainHeight);

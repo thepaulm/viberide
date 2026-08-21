@@ -69,10 +69,10 @@ namespace KickrWorld.EditorTools
                 Log($"    - {name}");
 
             Log("Building road distance field...");
-            WorldGen.BuildRoadField(settings, route, out var distField, out var elevField);
+            WorldGen.BuildRoadField(settings, route, out var distField, out var elevField, out var sideField);
 
             Log("Building heightmap...");
-            var heights = WorldGen.BuildHeightmap(settings, route, distField, elevField);
+            var heights = WorldGen.BuildHeightmap(settings, route, distField, elevField, sideField);
 
             // Lakes are cut into the heightmap, not placed on it, so this runs
             // before the terrain is created -- and before the height stats below,
@@ -84,6 +84,7 @@ namespace KickrWorld.EditorTools
             LogHeightStats(heights, settings);
             LogRoadGrade(route);
             LogTransect(heights, settings, route);
+            LogValleySides(heights, settings, route);
 
             Log("Creating terrain...");
             var data = new TerrainData { name = "RideTerrain" };
@@ -272,6 +273,61 @@ namespace KickrWorld.EditorTools
         /// </summary>
         /// <summary>Boats, loaded the way scenery is: LakeSurfaces is runtime
         /// code and cannot touch AssetDatabase.</summary>
+        /// <summary>
+        /// How far the ground falls on each side of the road, station by station.
+        ///
+        /// The asymmetric corridor is invisible in a screenshot unless you happen
+        /// to stop where it is strong, and "I cannot see it" is not evidence that
+        /// it is not there. This reports the distribution and names the best and
+        /// worst stations so a capture can be aimed at each.
+        /// </summary>
+        static void LogValleySides(float[,] heights, WorldSettings s, RoutePath route)
+        {
+            int res = s.HeightmapResolution;
+            float texel = s.TerrainSize / (res - 1);
+
+            float Ground(float wx, float wz)
+            {
+                int xi = Mathf.Clamp(Mathf.RoundToInt(wx / texel), 0, res - 1);
+                int zi = Mathf.Clamp(Mathf.RoundToInt(wz / texel), 0, res - 1);
+                return heights[zi, xi] * s.TerrainHeight;
+            }
+
+            var drops = new List<float>();
+            float bestDrop = 0f, bestAt = 0f;
+            int stations = Mathf.Max(8, Mathf.RoundToInt(route.Length / 100f));
+
+            for (int i = 0; i < stations; i++)
+            {
+                float d = (i / (float)stations) * route.Length;
+                Vector3 p = route.PositionAt(d);
+                Vector3 fwd = route.ForwardAt(d, 8f);
+                var lat = new Vector2(fwd.z, -fwd.x).normalized;
+
+                float best = 0f;
+                foreach (int sign in new[] { -1, 1 })
+                {
+                    float lowest = 0f;
+                    foreach (float off in new[] { 40f, 70f, 110f, 160f })
+                    {
+                        float g = Ground(p.x + lat.x * off * sign, p.z + lat.y * off * sign);
+                        lowest = Mathf.Min(lowest, g - p.y);
+                    }
+                    best = Mathf.Min(best, lowest);
+                }
+
+                float drop = -best;
+                drops.Add(drop);
+                if (drop > bestDrop) { bestDrop = drop; bestAt = d; }
+            }
+
+            drops.Sort();
+            Log($"[WorldBuilder] valley side: ground falls {drops[0]:F0}-{drops[drops.Count - 1]:F0} m " +
+                $"within 160 m of the road (median {drops[drops.Count / 2]:F0} m, " +
+                $"75th pct {drops[(drops.Count * 3) / 4]:F0} m); " +
+                $"deepest {bestDrop:F0} m at km {bestAt / 1000f:F1}");
+        }
+
         static void AssignBoatModels(LakeSurfaces water)
         {
             water.SailboatPrefabs = LoadModels("Boats/ship-small");

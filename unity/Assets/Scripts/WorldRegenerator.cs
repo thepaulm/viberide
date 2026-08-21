@@ -103,12 +103,12 @@ namespace KickrWorld
 
             Stage = "Mapping road corridor";
             yield return null;
-            WorldGen.BuildRoadField(settings, route, out var distField, out var elevField);
+            WorldGen.BuildRoadField(settings, route, out var distField, out var elevField, out var sideField);
             Progress = 0.15f;
 
             Stage = "Sculpting terrain";
             yield return null;
-            var builder = new WorldGen.HeightmapBuilder(settings, route, distField, elevField);
+            var builder = new WorldGen.HeightmapBuilder(settings, route, distField, elevField, sideField);
             while (!builder.Complete)
             {
                 builder.Step(Mathf.Max(4, RowsPerFrame));

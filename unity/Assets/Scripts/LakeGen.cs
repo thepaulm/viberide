@@ -72,25 +72,28 @@ namespace KickrWorld
         const float BankHeight = 3f;
 
         /// <summary>
-        /// Closest the carve may come to the road centreline, and where it starts:
-        /// the lake is laid against the road, not across a field from it.
+        /// Closest the carve may come to the road centreline.
         ///
-        /// This is the whole geometry of the feature, and it took measuring to
-        /// find. The road sits on ground flattened to its own level, and the rider
-        /// looks out from about two metres above that. Sighting across a flat
-        /// apron of width W from height E, a surface D below the road only becomes
-        /// visible beyond a range of W * D / E -- so with the 45 m apron the first
-        /// version left, a lake 15 m down was hidden until 337 m away, and every
-        /// lake it placed sat comfortably inside that shadow. Bigger and deeper
-        /// made it worse, not better: depth pushes the shadow out faster than it
-        /// buys viewing angle.
-        ///
-        /// The way out is the opposite of the instinct. Bring the water close and
-        /// keep it shallow: at 55 m and 3.5 m down it clears the shadow, subtends
-        /// nearly six degrees at the near shore, and the road becomes a lakeside
-        /// road, which is what one actually wants to ride along.
+        /// This no longer has to hug the road. Before the corridor gained a
+        /// falling side, the ground beside the road was flat at road level for
+        /// 40 m and a lake had to be crammed against the shoulder to get out from
+        /// behind that lip -- and even then it was a sliver, because a surface
+        /// D below flat ground of width A is hidden out to A(E+D)/E for an eye
+        /// E above it. Now the open side falls away on its own, so the lake can
+        /// sit out on the shelf where it has room to be a lake.
         /// </summary>
         const float RoadClearance = 16f;
+
+        /// <summary>
+        /// Where the near shore has to start to be seen at all.
+        ///
+        /// The open side of the road keeps a shoulder about 10 m wide before it
+        /// falls. Sighting past that from 2 m up, water D below is hidden out to
+        /// A(E+D)/E -- roughly 160 m for a 30 m drop. This is that number, and it
+        /// is the reason lakes sit out on the shelf rather than against the road:
+        /// every version that hugged the shoulder produced a thin blue ribbon.
+        /// </summary>
+        const float ShadowClear = 165f;
 
         /// <summary>
         /// Metres the road may rise or fall along the lake and still count.
@@ -114,6 +117,8 @@ namespace KickrWorld
         //
         // The ceiling is 70 m, so the lake stays part of the ride rather than
         // something glimpsed at the bottom of a ravine.
+        // At least 18 m down, so the lake sits on the shelf rather than in the
+        // strip beside the road, and no more than 70 so it stays part of the ride.
         const float MinBelowRoad = 5f;
         const float MaxBelowRoad = 40f;
 
@@ -186,7 +191,10 @@ namespace KickrWorld
                     if (relief > MaxRoadRelief) continue;
                     level++;
 
-                    // Exactly touching the clearance -- see RoadClearance.
+                    // Hard against the clearance. Pushing lakes out to clear the
+                    // lip shadow was tried and measured worse: past the corridor
+                    // the shelf fades, the ground comes back up, and the water
+                    // ends up both further away and behind natural terrain.
                     float offset = RoadClearance + halfWidth * ShapeBulge + ShoreBand;
 
                     for (int sign = -1; sign <= 1; sign += 2)
@@ -220,8 +228,9 @@ namespace KickrWorld
                         // away whatever stood in the way is what produced the pit.
                         if (!Basin(s, heights, res, texel, lake, out float median, out float high))
                         { rBasin++; continue; }
-                        // Just below the road, or lower if the ground already
-                        // is. Shallow on purpose -- see RoadClearance.
+                        // Straight from the ground that is there. The falling
+                        // side of the corridor supplies the drop now, so there is
+                        // nothing to force.
                         lake.WaterLevel = Mathf.Min(median - 1f, roadY - 8f);
 
                         // The lake must lie in ground that is ALREADY low. Digging
