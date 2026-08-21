@@ -29,6 +29,19 @@ the saddle with both arms up, the kind of thing real mountains collect. It is
 not scattered at random — the terrain is searched for a summit that is properly
 prominent, close enough to make out, and genuinely in view from the road.
 
+## And Lakes, with Boats
+
+![A lake with a sailing ship on it, dinosaurs grazing on the far side](docs/lake.png)
+
+Lakes are cut into the terrain rather than laid on top of it, so the ground meets
+the water at one level all the way round. A small sailing ship and a couple of
+rowboats drift about on each.
+
+The road picked up a falling side along the way. The ground used to be flattened
+to road level for 120 m either way; now one of those sides drops instead, which is
+both what a mountain road actually looks like and the only way to see anything
+below you from a bicycle.
+
 ## Download
 
 Grab the latest build from the
