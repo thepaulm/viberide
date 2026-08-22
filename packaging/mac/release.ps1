@@ -152,8 +152,15 @@ try {
         & gh release upload $tag $zip --clobber 2>&1 | ForEach-Object { Write-Host "    $_" }
         if ($LASTEXITCODE -ne 0) { throw "gh release upload failed ($LASTEXITCODE)" }
     } else {
+        # Notes go via a file, never as an argument. They contain quoted shell
+        # snippets, and PowerShell re-splits a native command's arguments on the
+        # embedded quotes -- which turned `bash "Install VibeRide.command"` into
+        # gh complaining "no matches found for VibeRide.command".
+        $notesFile = Join-Path $env:TEMP "viberide-notes-$Version.md"
+        Set-Content -Path $notesFile -Value $Notes -Encoding utf8
         $ghArgs = @("release", "create", $tag, $zip,
-                    "--title", "VibeRide $Version", "--notes", $Notes, "--target", $shaFull)
+                    "--title", "VibeRide $Version", "--notes-file", $notesFile,
+                    "--target", $shaFull)
         if ($Draft) { $ghArgs += "--draft" }
         & gh @ghArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
         if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
