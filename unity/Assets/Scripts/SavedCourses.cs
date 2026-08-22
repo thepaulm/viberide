@@ -51,6 +51,11 @@ namespace KickrWorld
                     var parsed = JsonUtility.FromJson<Store>(json);
                     if (parsed?.items != null) _store = parsed;
                 }
+                // Say where they live. This file sits next to the Python
+                // environment the app builds for itself, and anyone clearing that
+                // out by hand should be able to see from the log which folder is
+                // which before reaching for rm.
+                UnityEngine.Debug.Log($"[SavedCourses] {_store.items.Count} saved in {FilePath}");
             }
             catch (Exception exc)
             {

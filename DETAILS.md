@@ -696,6 +696,28 @@ kept, because rebuilding it every launch would be a minute of waiting for nothin
 neither is something the app can do to itself while running. That is all the
 installer does now, which is why it is fast.
 
+### What lives where, and what survives an upgrade
+
+Nothing the rider creates is inside the bundle, so replacing the app cannot lose
+any of it. On macOS:
+
+| Path | What | Survives reinstall |
+| --- | --- | --- |
+| `/Applications/VibeRide.app` | the app | replaced wholesale by the installer |
+| `~/Library/Application Support/VibeRide/VibeRide/courses.json` | saved courses | yes |
+| `~/Library/Application Support/VibeRide/bridge/` | Python environment | yes, and rebuilt if deleted |
+| `~/Library/Preferences/unity.VibeRide.VibeRide.plist` | metric/imperial setting | yes |
+
+The first two share a parent because `Application.persistentDataPath` on macOS is
+`~/Library/Application Support/<company>/<product>`, and both are `VibeRide` — so
+Unity's data sits at `VibeRide/VibeRide/` and the Python environment beside it at
+`VibeRide/bridge/`.
+
+That adjacency is worth knowing about, because the troubleshooting note in
+`START_HERE.md` briefly told the rider to delete the shared parent to rebuild the
+Python environment. It would have worked, and taken every saved course with it.
+The instruction now names the `bridge` folder.
+
 ### Why the installer is an .app and not a script
 
 It shipped once as `Install VibeRide.command` and that was a mistake. Gatekeeper

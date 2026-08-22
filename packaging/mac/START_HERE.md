@@ -47,7 +47,7 @@ bash VibeRide/install.sh
 `bash install.sh` also works on an already-unzipped copy.
 
 **The first launch takes about a minute.** The app builds the Python environment
-the trainer bridge needs, into `~/Library/Application Support/VibeRide`, and shows
+the trainer bridge needs, into `~/Library/Application Support/VibeRide/bridge`, and shows
 the progress in its status panel. After that it starts in a couple of seconds.
 
 It uses a Python you already have. Most Macs have one, and the search runs each
@@ -62,6 +62,21 @@ The environment lives outside the app bundle on purpose. macOS ties the Bluetoot
 permission to the app's signature, and writing anything inside the bundle after it
 is signed breaks that - which would make the trainer permission quietly stop
 sticking.
+
+## Your saved courses survive upgrades
+
+Nothing you have saved lives inside the app, so replacing it cannot lose anything.
+The installer removes only `/Applications/VibeRide.app`.
+
+```
+~/Library/Application Support/VibeRide/
+    VibeRide/courses.json     your saved courses, and the unit setting
+    bridge/                   the Python environment, rebuilt if deleted
+```
+
+Reinstall as often as you like. The only way to lose courses is to delete that
+`VibeRide/courses.json` yourself - so when clearing out the Python environment,
+name the `bridge` folder rather than the parent.
 
 ## How it fits together
 
@@ -126,10 +141,16 @@ The detail line is the useful part when something is wrong:
 installer, so its permissions are wrong; the launcher
 needs its executable bit and the quarantine flag cleared.
 
-**Bridge won't start** - run it by hand to see why: `cd bridge && ./run_bridge.sh`.
-Usually no Python 3.9+ on PATH. The status panel names the reason. To force the
-environment to be rebuilt from scratch, delete
-`~/Library/Application Support/VibeRide` and open the app again.
+**Bridge won't start** - usually no Python 3.9+ on PATH; the status panel names
+the reason. To force the environment to be rebuilt from scratch, delete just the
+`bridge` folder and open the app again:
+
+```bash
+rm -rf ~/Library/Application\ Support/VibeRide/bridge
+```
+
+Delete that folder, **not** its parent - your saved courses are the other thing
+in there.
 
 **Trainer never found** - macOS identifies BLE devices by CoreBluetooth UUID
 rather than MAC address, so match by name (the default, `KICKR`); any address

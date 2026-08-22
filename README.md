@@ -53,6 +53,9 @@ Unzip and double-click **Install VibeRide**. It replaces any previous copy in
 can attach a Bluetooth permission to it, and opens it. Run it again to upgrade —
 there is nothing to delete first.
 
+Saved courses live in `~/Library/Application Support/VibeRide/`, not inside the
+app, so upgrading never loses them.
+
 macOS blocks it the first time, because the app is not signed with a paid Apple
 Developer ID. Open **System Settings → Privacy & Security**, find the message
 naming Install VibeRide, and click **Open Anyway**. Once only — the installer
