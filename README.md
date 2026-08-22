@@ -54,8 +54,9 @@ can attach a Bluetooth permission to it, and opens it. Run it again to upgrade �
 there is nothing to delete first.
 
 The first launch takes about a minute while the app builds the Python environment
-the trainer bridge needs; the status panel shows the progress. Needs Python 3.9+
-(`brew install python3`). After that it starts in a couple of seconds, and it
+the trainer bridge needs; the status panel shows the progress. It uses a Python
+3.9+ you already have — most Macs have one — and only asks you to install one if
+it genuinely cannot find any. After that it starts in a couple of seconds, and it
 runs the bridge itself and shuts it down when you quit.
 
 Full instructions are in `START_HERE.md` inside the zip.

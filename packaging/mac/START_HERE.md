@@ -21,8 +21,15 @@ bash "Install VibeRide.command"
 
 **The first launch takes about a minute.** The app builds the Python environment
 the trainer bridge needs, into `~/Library/Application Support/VibeRide`, and shows
-the progress in its status panel. It needs Python 3.9+ - `brew install python3` if
-you don't have it. After that it starts in a couple of seconds.
+the progress in its status panel. After that it starts in a couple of seconds.
+
+It uses a Python you already have. Most Macs have one, and the search runs each
+candidate rather than trusting the filename - your own `python3`, then Homebrew,
+MacPorts, pyenv and python.org installs, then versioned names like `python3.12`,
+and Apple's `/usr/bin/python3` last, only when the command line tools are actually
+behind it. Anything older than 3.9 is skipped rather than accepted. Only if none
+of that turns up a usable interpreter does it ask you to install one, and it says
+so in the status panel.
 
 The environment lives outside the app bundle on purpose. macOS ties the Bluetooth
 permission to the app's signature, and writing anything inside the bundle after it

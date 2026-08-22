@@ -130,8 +130,9 @@ If macOS blocks the double-click because the file came from the internet,
 right-click it and choose Open, then confirm. Or run ``bash "Install VibeRide.command"``.
 
 The first launch builds the Python environment the trainer bridge needs -- about a
-minute, with progress in the app's status panel. Needs Python 3.9+
-(``brew install python3``). There is no separate setup step any more.
+minute, with progress in the app's status panel. It uses a Python 3.9+ you already
+have, and only asks you to install one if it cannot find any. There is no separate
+setup step any more.
 
 See START_HERE.md inside the zip for the full instructions.
 "@

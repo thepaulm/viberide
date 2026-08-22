@@ -98,23 +98,22 @@ namespace KickrWorld
             return r.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        /// <summary>A system Python capable of building the environment.</summary>
+        /// <summary>
+        /// A system Python capable of building the environment -- Windows only.
+        ///
+        /// macOS deliberately has no equivalent here. setup_mac.sh searches for an
+        /// interpreter properly, by running each candidate rather than looking for
+        /// the file, and this used to duplicate that badly: it accepted
+        /// /usr/bin/python3 on sight, which exists on every Mac since Catalina
+        /// even when it is only a stub that opens an installer dialog, and it
+        /// never checked the version. Worse, the answer was thrown away -- the
+        /// script resolved python3 from PATH independently, so the interpreter
+        /// that got vetted was not necessarily the one that got used.
+        /// </summary>
         public static string FindSystemPython()
         {
             if (Application.platform == RuntimePlatform.WindowsPlayer)
                 return "python.exe";   // resolved through PATH
-
-            // Homebrew first: the python3 in /usr/bin is Apple's command line
-            // tools stub, which exists on machines where it is not actually
-            // installed and prompts a GUI dialog instead of running.
-            foreach (var p in new[]
-                     {
-                         "/opt/homebrew/bin/python3",
-                         "/usr/local/bin/python3",
-                         "/usr/bin/python3",
-                     })
-                if (File.Exists(p)) return p;
-
             return null;
         }
 
@@ -169,11 +168,6 @@ namespace KickrWorld
                 if (!File.Exists(script))
                 {
                     error = "setup_mac.sh missing from the bridge";
-                    return null;
-                }
-                if (FindSystemPython() == null)
-                {
-                    error = "Python 3 not found -- install it with: brew install python3";
                     return null;
                 }
                 file = "/bin/bash";
