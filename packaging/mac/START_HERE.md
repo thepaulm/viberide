@@ -3,19 +3,31 @@
 Full documentation, screenshots and source: https://github.com/thepaulm/viberide
 
 
-Run setup once, then just open the app. It launches the Python bridge itself and
-shuts it down when you quit.
+## Install
+
+Double-click **Install VibeRide**.
+
+It replaces any previous copy in /Applications, clears the Gatekeeper quarantine
+flag, re-signs the app so macOS can attach a Bluetooth permission to it, and
+opens it. Run it again any time to upgrade - there is nothing to delete first.
+
+If macOS refuses to open it because it came from the internet, right-click it and
+choose **Open**, then confirm. That prompt appears once. The equivalent from a
+terminal, if you prefer:
 
 ```bash
-bash setup.sh
+bash "Install VibeRide.command"
 ```
 
-That restores the executable bit (a zip made on Windows can't carry it), clears
-the Gatekeeper quarantine flag, re-signs the app so macOS can attach a Bluetooth
-permission to it, and builds the Python virtualenv. Needs Python 3.9+ -
-`brew install python3` if you don't have it.
+**The first launch takes about a minute.** The app builds the Python environment
+the trainer bridge needs, into `~/Library/Application Support/VibeRide`, and shows
+the progress in its status panel. It needs Python 3.9+ - `brew install python3` if
+you don't have it. After that it starts in a couple of seconds.
 
-Then open `VibeRide.app`.
+The environment lives outside the app bundle on purpose. macOS ties the Bluetooth
+permission to the app's signature, and writing anything inside the bundle after it
+is signed breaks that - which would make the trainer permission quietly stop
+sticking.
 
 ## How it fits together
 
@@ -76,11 +88,14 @@ The detail line is the useful part when something is wrong:
 
 ## Troubleshooting
 
-**App bounces in the Dock and quits** - you skipped `setup.sh`; the launcher
+**App bounces in the Dock and quits** - the bundle was never installed by the
+installer, so its permissions are wrong; the launcher
 needs its executable bit and the quarantine flag cleared.
 
 **Bridge won't start** - run it by hand to see why: `cd bridge && ./run_bridge.sh`.
-Usually a missing virtualenv (re-run `setup.sh`) or no Python 3.9+ on PATH.
+Usually no Python 3.9+ on PATH. The status panel names the reason. To force the
+environment to be rebuilt from scratch, delete
+`~/Library/Application Support/VibeRide` and open the app again.
 
 **Trainer never found** - macOS identifies BLE devices by CoreBluetooth UUID
 rather than MAC address, so match by name (the default, `KICKR`); any address

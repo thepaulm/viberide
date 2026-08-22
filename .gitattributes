@@ -1,0 +1,6 @@
+# Shell scripts must reach macOS with LF endings. A CRLF shebang line makes the
+# kernel look for an interpreter named "bash\r", and the error it prints --
+# "bad interpreter: no such file or directory" -- names a path that plainly
+# exists, which is a memorably unhelpful way to lose an afternoon.
+*.sh        text eol=lf
+*.command   text eol=lf

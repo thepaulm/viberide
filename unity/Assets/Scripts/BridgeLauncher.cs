@@ -44,6 +44,15 @@ namespace KickrWorld
 
         Process _process;
 
+        // First-run setup of the Python environment, if the app finds none.
+        Process _setup;
+        string _setupTarget;
+        string _setupLastLine = "";
+        readonly System.Collections.Concurrent.ConcurrentQueue<string> _setupLog = new();
+
+        /// <summary>Running the bridge, or getting ready to.</summary>
+        public bool Busy => Managing || _setup != null;
+
         // Output from the child arrives on background threads. Unity's Debug.Log
         // takes an internal lock, and calling it off the main thread while the
         // engine is still starting can stall the main thread. Queue instead, and
@@ -76,6 +85,73 @@ namespace KickrWorld
             int drained = 0;
             while (drained++ < 40 && _pendingLog.TryDequeue(out var line))
                 Debug.Log($"[bridge] {line}");
+
+            PumpSetup();
+        }
+
+        /// <summary>Watch the first-run environment build, and start the bridge
+        /// once it finishes.</summary>
+        void PumpSetup()
+        {
+            int drained = 0;
+            while (drained++ < 20 && _setupLog.TryDequeue(out var line))
+            {
+                Debug.Log($"[setup] {line}");
+                // Whatever it last said, verbatim. A first run is most of a
+                // minute and silence reads as a hang; and when it fails, the last
+                // thing it said IS the error, which is what wants to be on screen.
+                _setupLastLine = line.Trim();
+                if (_setupLastLine.Length > 0)
+                    Status = "setting up: " + Truncate(_setupLastLine, 60);
+            }
+
+            if (_setup == null || !SafeHasExited(_setup)) return;
+
+            int code;
+            try { code = _setup.ExitCode; } catch { code = -1; }
+            string dir = _setupTarget;
+            try { _setup.Dispose(); } catch { }
+            _setup = null;
+            _setupTarget = null;
+
+            if (code == 0 && BridgeProvisioner.HasVenv(dir))
+            {
+                Debug.Log("[BridgeLauncher] Python environment ready; starting the bridge.");
+                StartBridge(dir);
+            }
+            else
+            {
+                Status = $"setup failed: {(_setupLastLine.Length > 0 ? _setupLastLine : $"exit {code}")}";
+                Debug.LogError($"[BridgeLauncher] Python setup failed (exit {code}). {_setupLastLine}");
+            }
+        }
+
+        void BeginSetup(string dir)
+        {
+            _setup = BridgeProvisioner.StartBuild(dir, out string error);
+            if (_setup == null)
+            {
+                Status = error;
+                Debug.LogError($"[BridgeLauncher] {error}");
+                return;
+            }
+
+            _setupTarget = dir;
+            _setupLastLine = "";
+            Status = "first run: setting up Python";
+            _setup.OutputDataReceived += (_, e) => QueueSetup(e.Data);
+            _setup.ErrorDataReceived += (_, e) => QueueSetup(e.Data);
+            _setup.BeginOutputReadLine();
+            _setup.BeginErrorReadLine();
+        }
+
+        static string Truncate(string s, int max) =>
+            s.Length <= max ? s : s.Substring(0, max - 1) + "\u2026";
+
+        void QueueSetup(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return;
+            if (_setupLog.Count < 200) _setupLog.Enqueue(line);
         }
 
         // --- locating things ---------------------------------------------------
@@ -117,6 +193,57 @@ namespace KickrWorld
                     return c;
 
             return null;
+        }
+
+        /// <summary>The read-only copy shipped inside the app bundle.</summary>
+        static string BundledBridgeDirectory()
+        {
+            if (Application.isEditor) return null;
+            string data = Application.dataPath;
+            foreach (var rel in new[] { "..", Path.Combine("..", "..") })
+            {
+                string c = Path.GetFullPath(Path.Combine(data, rel, "bridge"));
+                if (Directory.Exists(Path.Combine(c, "kickr_bridge"))) return c;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Decide which copy of the bridge to run, refreshing the writable one
+        /// from the bundle on the way past.
+        ///
+        /// In a player the answer is always the copy in Application Support, for
+        /// two reasons: a virtualenv cannot be built inside a bundle the user may
+        /// not own, and anything written into the bundle after signing breaks the
+        /// signature that macOS hangs the Bluetooth permission on.
+        /// </summary>
+        string ResolveBridgeDirectory(out bool needsSetup)
+        {
+            needsSetup = false;
+            if (Application.isEditor) return FindBridgeDirectory();
+
+            string support = BridgeProvisioner.SupportDirectory();
+            string bundled = BundledBridgeDirectory();
+
+            if (support != null && bundled != null)
+            {
+                try
+                {
+                    BridgeProvisioner.MirrorCode(bundled, support);
+                }
+                catch (Exception exc)
+                {
+                    Debug.LogWarning($"[BridgeLauncher] could not refresh {support}: {exc.Message}");
+                }
+            }
+
+            if (BridgeProvisioner.HasCode(support))
+            {
+                needsSetup = !BridgeProvisioner.HasVenv(support);
+                return support;
+            }
+
+            return FindBridgeDirectory();
         }
 
         static bool HasVenv(string bridgeDir)
@@ -182,7 +309,7 @@ namespace KickrWorld
                 return;
             }
 
-            string bridgeDir = FindBridgeDirectory();
+            string bridgeDir = ResolveBridgeDirectory(out bool needsSetup);
             if (bridgeDir == null)
             {
                 Status = "bridge folder not found";
@@ -192,11 +319,23 @@ namespace KickrWorld
                 return;
             }
 
+            if (needsSetup)
+            {
+                BeginSetup(bridgeDir);
+                return;
+            }
+
+            StartBridge(bridgeDir);
+        }
+
+        void StartBridge(string bridgeDir)
+        {
+            int port = ParsePort(Link != null ? Link.Url : "ws://127.0.0.1:8765");
             string python = FindPython(bridgeDir);
             if (python == null)
             {
-                Status = "python not found";
-                Debug.LogError($"[BridgeLauncher] No Python found. Run setup_mac.sh in {bridgeDir}.");
+                Status = "Python 3 not found -- install it with: brew install python3";
+                Debug.LogError($"[BridgeLauncher] No Python found for {bridgeDir}.");
                 return;
             }
 
@@ -260,6 +399,17 @@ namespace KickrWorld
 
         public void Shutdown()
         {
+            // A half-built virtualenv is harmless -- the next launch sees no venv
+            // and starts again -- but leaving pip running after the window closes
+            // is not something a user would ever guess at.
+            var setup = _setup;
+            _setup = null;
+            if (setup != null)
+            {
+                try { if (!SafeHasExited(setup)) setup.Kill(); } catch { }
+                try { setup.Dispose(); } catch { }
+            }
+
             var proc = _process;
             _process = null;
             if (proc == null) return;

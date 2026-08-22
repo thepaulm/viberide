@@ -656,15 +656,45 @@ Three things to know:
 
 | File | Purpose |
 | --- | --- |
-| `setup.sh` | one-time setup the rider runs: permissions, re-sign, virtualenv |
+| `Install VibeRide.command` | double-clickable installer: replace, unquarantine, re-sign, open |
 | `START_HERE.md` | the instructions that go in the zip |
-| `makezip.ps1` | builds the zip with **forward-slash** entry names |
+| `makezip.py` | builds the zip with forward-slash names **and Unix file modes** |
 
-That last one matters. PowerShell's `Compress-Archive` writes backslash path
-separators, which macOS does not treat as directory separators — it unpacks the
-`.app` as ~150 flat files with backslashes in their names, i.e. a broken bundle.
-`makezip.ps1` writes spec-compliant entries and verifies none contain a
-backslash before finishing.
+### Why there is no setup step any more
+
+There used to be a `setup.sh` the rider ran by hand. That was never a design
+decision — it was the sum of three constraints, each of which is now handled
+where it belongs.
+
+**The zip could not carry an executable bit.** ZIP keeps the Unix mode in the
+high 16 bits of the central directory's external attributes, but an unpacker only
+believes it when the *version made by* host byte says Unix — and .NET stamps that
+from the machine it runs on, which here is Windows. So `Contents/MacOS/VibeRide`
+arrived as mode 644 and the bundle would not launch until something chmodded it.
+`makezip.py` is Python for exactly this reason: it can set both fields, so an
+archive built on Windows arrives on a Mac with an executable app in it.
+
+It still writes forward-slash entry names, which matters just as much. PowerShell's
+`Compress-Archive` writes backslashes, which macOS does not treat as separators —
+it unpacks the `.app` as ~150 flat files with backslashes in their names.
+
+**A virtualenv cannot be built inside the bundle.** Not reliably: the app may live
+somewhere the user cannot write, and anything added inside a bundle after signing
+invalidates the signature — which is what macOS hangs the Bluetooth grant on, so
+the trainer permission quietly stops sticking. `BridgeProvisioner` keeps the
+environment in `~/Library/Application Support/VibeRide` instead and builds it on
+first launch, running the bridge's own `setup_mac.sh` rather than a second copy of
+its steps. The bundle stays exactly as it was signed.
+
+The bridge source is re-mirrored out of the bundle on *every* launch, not just the
+first. An app replaced in place brings new bridge code with it, and a stale copy in
+Application Support would quietly keep winning — which is precisely the "delete
+your old install first" trap the installer exists to remove. The virtualenv is
+kept, because rebuilding it every launch would be a minute of waiting for nothing.
+
+**Quarantine and the broken signature still need fixing at install time**, and
+neither is something the app can do to itself while running. That is all the
+installer does now, which is why it is fast.
 
 The zip deliberately ships `START_HERE.md` rather than this README: this file
 references images under `docs/`, which are not in the package, so every one of

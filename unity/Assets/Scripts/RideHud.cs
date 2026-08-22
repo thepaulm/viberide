@@ -228,8 +228,11 @@ namespace KickrWorld
             }
             else
             {
-                bridgeLine = Launcher != null && Launcher.Managing
-                    ? "starting..."
+                // Show whatever the launcher is doing rather than a flat
+                // "starting". First run builds a Python environment and takes the
+                // better part of a minute, and an unexplained wait reads as a hang.
+                bridgeLine = Launcher != null && Launcher.Busy
+                    ? Launcher.Status
                     : "offline  ·  hold W to pedal, Shift to surge";
                 bridgeColor = Bad;
             }

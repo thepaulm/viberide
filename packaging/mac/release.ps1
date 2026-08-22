@@ -8,7 +8,9 @@
 # committed on every build would grow the repository without bound, and git
 # stores no useful diff between two builds of the same app.
 #
-# Requires: Unity 6000.2.8f1 with Mac Build Support, and `gh auth login` once.
+# Requires: Unity 6000.2.8f1 with Mac Build Support, `gh auth login` once,
+# and Python 3 on PATH -- the zip has to record Unix file modes and .NET
+# cannot write them. See makezip.py.
 
 param(
     [Parameter(Mandatory = $true)][string]$Version,
@@ -79,8 +81,8 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 Copy-Item $app (Join-Path $stage "VibeRide.app") -Recurse
-Copy-Item (Join-Path $PSScriptRoot "setup.sh")      $stage
-Copy-Item (Join-Path $PSScriptRoot "START_HERE.md") $stage
+Copy-Item (Join-Path $PSScriptRoot "Install VibeRide.command") $stage
+Copy-Item (Join-Path $PSScriptRoot "START_HERE.md")            $stage
 
 # Stamp the build so a downloaded copy can be traced back to a commit.
 @"
@@ -94,7 +96,11 @@ Get-ChildItem $stage | ForEach-Object { Write-Host "    $($_.Name)" }
 
 # --- zip ---------------------------------------------------------------------
 Step "Building the zip"
-& (Join-Path $PSScriptRoot "makezip.ps1") -Stage $stage -Zip $zip
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "python not found. The zip must record Unix file modes, which .NET cannot write."
+}
+& python (Join-Path $PSScriptRoot "makezip.py") $stage $zip
+if ($LASTEXITCODE -ne 0) { throw "makezip.py failed (exit $LASTEXITCODE)" }
 $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 Write-Host "    $zip  ($mb MB)"
 
@@ -116,10 +122,16 @@ if (-not $Notes) {
     $Notes = @"
 macOS universal build (Apple Silicon + Intel), built from $sha.
 
-**Install:** unzip, then ``bash setup.sh`` once, then open VibeRide.app.
-The setup script restores permissions the zip cannot carry, clears the Gatekeeper
-quarantine flag, re-signs the app so macOS can attach a Bluetooth permission, and
-builds the Python environment the trainer bridge needs.
+**Install:** unzip and double-click **Install VibeRide**. It replaces any previous
+copy in /Applications, clears the Gatekeeper quarantine flag, re-signs the app so
+macOS can attach a Bluetooth permission to it, and opens it.
+
+If macOS blocks the double-click because the file came from the internet,
+right-click it and choose Open, then confirm. Or run ``bash "Install VibeRide.command"``.
+
+The first launch builds the Python environment the trainer bridge needs -- about a
+minute, with progress in the app's status panel. Needs Python 3.9+
+(``brew install python3``). There is no separate setup step any more.
 
 See START_HERE.md inside the zip for the full instructions.
 "@
