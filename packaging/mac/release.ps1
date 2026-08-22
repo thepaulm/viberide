@@ -81,8 +81,12 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 Copy-Item $app (Join-Path $stage "VibeRide.app") -Recurse
-Copy-Item (Join-Path $PSScriptRoot "Install VibeRide.command") $stage
-Copy-Item (Join-Path $PSScriptRoot "START_HERE.md")            $stage
+# The installer is an .app, not a .command. Gatekeeper blocks both, but only an
+# .app gets an "Open Anyway" button in System Settings > Privacy & Security --
+# a script is refused with no visible way to allow it.
+Copy-Item (Join-Path $PSScriptRoot "installer\Install VibeRide.app") $stage -Recurse
+Copy-Item (Join-Path $PSScriptRoot "install.sh")        $stage
+Copy-Item (Join-Path $PSScriptRoot "START_HERE.md")     $stage
 
 # Stamp the build so a downloaded copy can be traced back to a commit.
 @"
@@ -126,8 +130,16 @@ macOS universal build (Apple Silicon + Intel), built from $sha.
 copy in /Applications, clears the Gatekeeper quarantine flag, re-signs the app so
 macOS can attach a Bluetooth permission to it, and opens it.
 
-If macOS blocks the double-click because the file came from the internet,
-right-click it and choose Open, then confirm. Or run ``bash "Install VibeRide.command"``.
+macOS will block it the first time, because the app is not signed with a paid
+Apple Developer ID. Open **System Settings > Privacy & Security**, scroll to the
+message naming Install VibeRide, and click **Open Anyway**. Once only.
+
+To skip that entirely, download from a terminal -- files fetched with curl are not
+quarantined, so nothing gets blocked:
+
+```
+cd ~/Downloads && curl -fL -O https://github.com/thepaulm/viberide/releases/download/$tag/VibeRide-$Version-mac-universal.zip && unzip -o VibeRide-$Version-mac-universal.zip -d VibeRide && bash VibeRide/install.sh
+```
 
 The first launch builds the Python environment the trainer bridge needs -- about a
 minute, with progress in the app's status panel. It uses a Python 3.9+ you already

@@ -53,6 +53,12 @@ Unzip and double-click **Install VibeRide**. It replaces any previous copy in
 can attach a Bluetooth permission to it, and opens it. Run it again to upgrade —
 there is nothing to delete first.
 
+macOS blocks it the first time, because the app is not signed with a paid Apple
+Developer ID. Open **System Settings → Privacy & Security**, find the message
+naming Install VibeRide, and click **Open Anyway**. Once only — the installer
+clears the flag on the app it installs. Or download with `curl` instead, which
+does not quarantine anything and so is never blocked; see `START_HERE.md`.
+
 The first launch takes about a minute while the app builds the Python environment
 the trainer bridge needs; the status panel shows the progress. It uses a Python
 3.9+ you already have — most Macs have one — and only asks you to install one if

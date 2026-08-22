@@ -696,6 +696,30 @@ kept, because rebuilding it every launch would be a minute of waiting for nothin
 neither is something the app can do to itself while running. That is all the
 installer does now, which is why it is fast.
 
+### Why the installer is an .app and not a script
+
+It shipped once as `Install VibeRide.command` and that was a mistake. Gatekeeper
+blocks anything unsigned that arrived from the internet, but how you approve it
+depends on the *kind* of file:
+
+- An **.app** blocked this way is listed in System Settings > Privacy & Security
+  with an **Open Anyway** button beside it.
+- A **.command** is a shell script. macOS 15 removed the Control-click > Open
+  bypass that used to cover it, and a script does not reliably appear in that
+  Privacy & Security list either — so Finder refuses it and offers no way to
+  allow it. The only route left was a terminal, which is precisely what the
+  installer existed to avoid.
+
+So the same script now lives at `Install VibeRide.app/Contents/MacOS/install`
+with a minimal `Info.plist` beside it — an app bundle is only a directory with a
+launchable binary and a plist, and `makezip.py` already marks anything under
+`Contents/MacOS/` executable. Launched from Finder it has no terminal, so it
+reports through `osascript` dialogs; run from a shell it prints instead, chosen
+on whether stdout is a tty.
+
+None of this makes the app *trusted* — only a paid Developer ID and notarisation
+would. It makes the block **approvable**, which is the part that was missing.
+
 The zip deliberately ships `START_HERE.md` rather than this README: this file
 references images under `docs/`, which are not in the package, so every one of
 them would render broken.

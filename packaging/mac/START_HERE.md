@@ -11,13 +11,40 @@ It replaces any previous copy in /Applications, clears the Gatekeeper quarantine
 flag, re-signs the app so macOS can attach a Bluetooth permission to it, and
 opens it. Run it again any time to upgrade - there is nothing to delete first.
 
-If macOS refuses to open it because it came from the internet, right-click it and
-choose **Open**, then confirm. That prompt appears once. The equivalent from a
-terminal, if you prefer:
+### macOS will block it the first time
+
+You will get *"Apple could not verify Install VibeRide is free of malware"*. That
+is Gatekeeper, and every app not signed with a paid Apple Developer ID gets it.
+Nothing is wrong with the download.
+
+To allow it:
+
+1. Open **System Settings > Privacy & Security**
+2. Scroll down to the message naming **Install VibeRide**
+3. Click **Open Anyway**
+
+Once only, and only for the installer - it clears the flag on the app it installs,
+so VibeRide itself opens normally afterwards.
+
+Do not bother hunting for right-click > Open. That bypass was removed in macOS 15,
+which is why the previous release shipped a `.command` file that could not be
+approved from Finder at all.
+
+### Or skip Gatekeeper entirely
+
+Files downloaded with `curl` are not quarantined, so nothing gets blocked. From
+Terminal:
 
 ```bash
-bash "Install VibeRide.command"
+cd ~/Downloads
+curl -fL -O https://github.com/thepaulm/viberide/releases/latest/download/VibeRide-mac-universal.zip
+unzip -o VibeRide-mac-universal.zip -d VibeRide
+bash VibeRide/install.sh
 ```
+
+(the exact filename carries the version - copy it from the Releases page)
+
+`bash install.sh` also works on an already-unzipped copy.
 
 **The first launch takes about a minute.** The app builds the Python environment
 the trainer bridge needs, into `~/Library/Application Support/VibeRide`, and shows
