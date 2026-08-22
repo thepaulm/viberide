@@ -98,17 +98,22 @@ def main() -> int:
         bad = [e.filename for e in entries if "\\" in e.filename]
         print(f"entries containing a backslash: {len(bad)}")
 
-        launcher = next((e for e in entries if "/Contents/MacOS/" in e.filename
-                         and not e.is_dir()), None)
-        if launcher is None:
-            print("ERROR: no launcher entry under Contents/MacOS/")
-            return 1
-        mode = (launcher.external_attr >> 16) & 0o7777
-        host = launcher.create_system
-        print(f"launcher entry: {launcher.filename} mode {mode:o} host {host}")
-        if host != UNIX or not mode & 0o111:
-            print("ERROR: launcher is not marked executable for Unix")
-            return 1
+        # Name the bundles explicitly. Matching the first "/Contents/MacOS/"
+        # entry silently started checking the INSTALLER once that became an .app
+        # too, leaving the thing it was written to protect -- the app's own
+        # launcher -- unverified.
+        for label, needle in (("app", "VibeRide.app/Contents/MacOS/"),
+                              ("installer", "Install VibeRide.app/Contents/MacOS/")):
+            entry = next((e for e in entries
+                          if e.filename.startswith(needle) and not e.is_dir()), None)
+            if entry is None:
+                print(f"ERROR: no {label} launcher under {needle}")
+                return 1
+            mode = (entry.external_attr >> 16) & 0o7777
+            print(f"{label} launcher: {entry.filename} mode {mode:o} host {entry.create_system}")
+            if entry.create_system != UNIX or not mode & 0o111:
+                print(f"ERROR: {label} launcher is not marked executable for Unix")
+                return 1
 
         bridge = [e for e in entries if "/Contents/Resources/bridge/" in e.filename
                   and not e.is_dir()]
