@@ -1,8 +1,15 @@
 # Build, package and publish a macOS release to GitHub.
 #
-#   powershell -File packaging\mac\release.ps1 -Version 0.2.0
-#   powershell -File packaging\mac\release.ps1 -Version 0.2.0 -Draft
-#   powershell -File packaging\mac\release.ps1 -Version 0.2.0 -SkipBuild   # repackage only
+#   powershell -File packaging\mac\release.ps1                  # version from .\VERSION
+#   powershell -File packaging\mac\release.ps1 -Draft
+#   powershell -File packaging\mac\release.ps1 -SkipBuild        # repackage only
+#   powershell -File packaging\mac\release.ps1 -Replace          # overwrite that version
+#
+# The version lives in the VERSION file at the repo root, so bumping it is part
+# of the change that needs releasing and shows up in the diff. It used to be
+# only an argument here, which meant nothing in the repository recorded what had
+# been shipped -- five commits once piled up behind a published tag without
+# anything noticing.
 #
 # The zip is attached to a GitHub Release rather than committed. A 45 MB binary
 # committed on every build would grow the repository without bound, and git
@@ -13,7 +20,8 @@
 # cannot write them. See makezip.py.
 
 param(
-    [Parameter(Mandatory = $true)][string]$Version,
+    [string]$Version = "",
+    [switch]$Replace,
     [switch]$Draft,
     [switch]$SkipBuild,
     [switch]$NoPublish,
@@ -26,10 +34,38 @@ $repo    = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $unity   = "C:\Program Files\Unity\Hub\Editor\6000.2.8f1\Editor\Unity.exe"
 $project = Join-Path $repo "unity"
 $app     = Join-Path $project "Builds\Mac\VibeRide.app"
+
+if (-not $Version) {
+    $versionFile = Join-Path $repo "VERSION"
+    if (-not (Test-Path $versionFile)) {
+        throw "No -Version given and no VERSION file at $versionFile"
+    }
+    $Version = (Get-Content $versionFile -Raw).Trim()
+    if (-not $Version) { throw "VERSION file is empty" }
+}
+
 $tag     = "v$Version"
 $zip     = Join-Path $repo "VibeRide-$Version-mac-universal.zip"
 
 function Step($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
+
+# Refuse to ship a version that is already out, before spending a build on it.
+#
+# The old behaviour was to quietly replace the asset on an existing release,
+# which is exactly how work can accumulate unnoticed: the release looks updated
+# while the tag still points at an older commit. Bump VERSION, or say -Replace
+# and mean it.
+if (-not $NoPublish -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+    $prevEAPv = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $null = & gh release view $tag --json tagName 2>&1
+    $alreadyOut = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prevEAPv
+
+    if ($alreadyOut -and -not $Replace) {
+        throw "$tag is already published. Bump VERSION for a new release, or pass -Replace to overwrite this one."
+    }
+}
 
 # --- refuse to ship a dirty or unpushed tree ---------------------------------
 # A published binary nobody can reproduce from a commit is worse than no binary.
