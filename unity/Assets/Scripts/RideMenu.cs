@@ -57,6 +57,9 @@ namespace KickrWorld
                 IsOpen = true;
 
             // -menupage saveas|load, so each page can be captured for docs
+            Debug.Log($"[VibeRide] version {Application.version}, " +
+                      $"running from {Application.dataPath}");
+
             // without anyone clicking through to it.
             var args = System.Environment.GetCommandLineArgs();
             int i = System.Array.IndexOf(args, "-menupage");
@@ -216,6 +219,13 @@ namespace KickrWorld
             y += 24f;
 
             if (GUI.Button(new Rect(px + 14f, y, w, RowHeight), "Exit", _button)) Quit();
+            y += RowHeight + 4f;
+
+            // Which build this is. Absent it, "the app is behaving like the old
+            // one" cannot be told apart from "the app IS the old one" -- and with
+            // copies capable of sitting in /Applications, ~/Applications and a
+            // Downloads folder at once, that is not a rare confusion.
+            GUI.Label(new Rect(px + 14f, y, w, 16f), $"VibeRide {Application.version}", _small);
         }
 
         // Bounds for the two sliders.

@@ -33,6 +33,10 @@ set -euo pipefail
 # copies the whole bundle, contents and all.
 SELF="$(cd "$(dirname "$0")" && pwd)"
 
+# VERSION.txt sits beside the installer bundle in the unpacked download. Only
+# used to name the version in the final dialog, so its absence is not fatal.
+ROOT_VERSION="$SELF/../../../VERSION.txt"
+
 APP=""
 for candidate in "$SELF/../Resources/VibeRide.app" "$SELF/VibeRide.app"; do
     [ -d "$candidate" ] && { APP="$(cd "$candidate" && pwd)"; break; }
@@ -143,7 +147,8 @@ else
     FIRST_RUN="The first launch takes about a minute while it builds the Python environment the trainer bridge needs. The status panel in the app shows the progress. It uses a Python you already have, if there is a suitable one."
 fi
 
-alert "VibeRide installed" "Installed to $TARGET, and opening it now.
+VER="$(sed -n '1p' "$ROOT_VERSION" 2>/dev/null | tr -d '\r' | awk '{print $2}')"
+alert "VibeRide installed" "Installed ${VER:+version $VER }to $TARGET, and opening it now.
 
 $FIRST_RUN
 
@@ -151,6 +156,6 @@ Wake the trainer by spinning the cranks, and make sure nothing else holds it -- 
 
 macOS will ask for Bluetooth permission on the first scan. Allow it, or the trainer is never found.$NOTE"
 
-# Already installed by this point; a failure to bring it to the front is not
-a failed install and must not be reported as one.
+# Already installed by this point; a failure to bring it to the front is not a
+# failed install and must not be reported as one.
 open "$TARGET" || true
