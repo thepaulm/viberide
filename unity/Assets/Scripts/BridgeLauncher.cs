@@ -172,8 +172,14 @@ namespace KickrWorld
             }
             else
             {
-                // macOS:   Foo.app/Contents/Resources/Data -> Contents/Resources/bridge
-                // Windows: Foo_Data                        -> <alongside exe>/bridge
+                // dataPath is Foo.app/Contents on macOS -- the bundle, not the
+                // Data folder inside it -- so the bundled bridge is one level
+                // DOWN from it, at Contents/Resources/bridge. Getting this
+                // wrong is invisible for as long as a copy also sits beside the
+                // .app, which is what the old zip layout shipped and what kept
+                // the "up" candidates below looking correct.
+                candidates.Add(Path.GetFullPath(Path.Combine(data, "Resources", "bridge")));
+                // Windows: Foo_Data -> <alongside exe>/bridge
                 candidates.Add(Path.GetFullPath(Path.Combine(data, "..", "bridge")));
                 candidates.Add(Path.GetFullPath(Path.Combine(data, "..", "..", "bridge")));
                 // Beside the .app itself. Creating a virtualenv inside a bundle
@@ -200,7 +206,10 @@ namespace KickrWorld
         {
             if (Application.isEditor) return null;
             string data = Application.dataPath;
-            foreach (var rel in new[] { "..", Path.Combine("..", "..") })
+            // "Resources" first: that is where the bundle actually carries it on
+            // macOS. The "up" entries cover Windows and any layout that reports
+            // the Data folder rather than the bundle.
+            foreach (var rel in new[] { "Resources", "..", Path.Combine("..", "..") })
             {
                 string c = Path.GetFullPath(Path.Combine(data, rel, "bridge"));
                 if (Directory.Exists(Path.Combine(c, "kickr_bridge"))) return c;
