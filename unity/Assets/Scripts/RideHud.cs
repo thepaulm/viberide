@@ -231,8 +231,17 @@ namespace KickrWorld
                 // Show whatever the launcher is doing rather than a flat
                 // "starting". First run builds a Python environment and takes the
                 // better part of a minute, and an unexplained wait reads as a hang.
-                bridgeLine = Launcher != null && Launcher.Busy
-                    ? Launcher.Status
+                // Show whatever the launcher last said, not just while it is
+                // working. A bridge that could not be found starts no process,
+                // so Busy is false and the panel used to read "offline" -- the
+                // same thing it says when there is simply no trainer awake. A
+                // hard failure looked exactly like an idle one, on the only
+                // screen anybody was watching.
+                string reason = Launcher != null ? Launcher.Status : null;
+                bool worthSaying = !string.IsNullOrEmpty(reason) && reason != "not started";
+
+                bridgeLine = Launcher != null && Launcher.Busy ? reason
+                    : worthSaying ? $"{reason}  ·  hold W to pedal"
                     : "offline  ·  hold W to pedal, Shift to surge";
                 bridgeColor = Bad;
             }

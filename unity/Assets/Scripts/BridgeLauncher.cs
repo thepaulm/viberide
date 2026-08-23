@@ -193,12 +193,27 @@ namespace KickrWorld
             // wherever it happens to live.
             foreach (var c in candidates)
                 if (Directory.Exists(Path.Combine(c, "kickr_bridge")) && HasVenv(c))
-                    return c;
+                    return Chose(c, candidates, "has a virtualenv");
             foreach (var c in candidates)
                 if (Directory.Exists(Path.Combine(c, "kickr_bridge")))
-                    return c;
+                    return Chose(c, candidates, "no virtualenv yet");
 
+            // Name every path that was tried. A wrong assumption about where the
+            // bundle keeps things is invisible from the symptom -- the app simply
+            // never connects -- and was invisible here too until the list was
+            // printed: dataPath on macOS is the Contents folder, so candidates
+            // built by walking UP from it could never reach the bridge sitting
+            // one level down in Resources.
+            Debug.LogError($"[BridgeLauncher] no bridge found. dataPath is {Application.dataPath}. " +
+                           $"Tried:\n  {string.Join("\n  ", candidates)}");
             return null;
+        }
+
+        static string Chose(string dir, List<string> candidates, string why)
+        {
+            Debug.Log($"[BridgeLauncher] using bridge at {dir} ({why}), " +
+                      $"from {candidates.Count} candidate(s)");
+            return dir;
         }
 
         /// <summary>The read-only copy shipped inside the app bundle.</summary>
@@ -249,9 +264,16 @@ namespace KickrWorld
             if (BridgeProvisioner.HasCode(support))
             {
                 needsSetup = !BridgeProvisioner.HasVenv(support);
+                Debug.Log($"[BridgeLauncher] bridge: {support} " +
+                          $"({(needsSetup ? "needs setup" : "ready")})");
                 return support;
             }
 
+            // Nothing in Application Support means the bundled copy could not be
+            // found to mirror from, so name that too -- it is the same fault, one
+            // step earlier, and silence here is what made it hard to see.
+            Debug.LogWarning($"[BridgeLauncher] nothing usable in {support}; " +
+                             $"falling back to the search");
             return FindBridgeDirectory();
         }
 

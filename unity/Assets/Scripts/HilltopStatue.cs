@@ -168,6 +168,8 @@ namespace KickrWorld
             template.transform.position = new Vector3(summit.Pos.x, baseY, summit.Pos.z);
             template.transform.rotation = Quaternion.Euler(0f, quarter, 0f);
 
+            AddSpotlights(template);
+
             _instance = template;
             Placed = true;
             Position = template.transform.position;
@@ -548,6 +550,87 @@ namespace KickrWorld
             Ball(bike, "HandR", handR + new Vector3(0.2f, 0.35f, 0.1f), 1.6f);
 
             return root;
+        }
+
+        [Header("Spotlights")]
+        [Tooltip("Uplighters ringing the plinth. Two colours, as a monument gets.")]
+        public bool Spotlights = true;
+        public Color SpotWarm = new Color(1f, 0.72f, 0.36f);
+        public Color SpotCool = new Color(0.42f, 0.62f, 1f);
+
+        /// <summary>
+        /// Ring the base with uplighters, alternating warm and cool.
+        ///
+        /// Aimed UP the statue from just outside the plinth, which is how a
+        /// monument is actually lit and, usefully, the one direction the sun
+        /// never comes from -- so they read at midday rather than only at dusk.
+        ///
+        /// Range and angle are set from the measured height rather than fixed:
+        /// TotalHeight is a public field and a 50 m default, so a cone tuned to
+        /// one number would miss the moment anyone changed it.
+        /// </summary>
+        void AddSpotlights(GameObject root)
+        {
+            if (!Spotlights) return;
+
+            var bounds = LocalBounds(root);
+            float scale = root.transform.localScale.y;
+            float height = Mathf.Max(1f, bounds.size.y * scale);
+            // Half the footprint, plus a little, so the lamps stand clear of the
+            // plinth instead of inside it.
+            float radius = Mathf.Max(bounds.size.x, bounds.size.z) * root.transform.localScale.x * 0.5f + 14f;
+
+            var lamps = new GameObject("Spotlights");
+            lamps.transform.SetParent(root.transform, false);
+            // Undo the root's scale: the monument is normalised to TotalHeight by
+            // scaling the whole bundle, and a Light inherits that -- range and
+            // spot angle would come out multiplied by whatever factor that was.
+            lamps.transform.localScale = Vector3.one / Mathf.Max(0.0001f, scale);
+
+            const int count = 4;
+            for (int i = 0; i < count; i++)
+            {
+                float ang = (i + 0.5f) * Mathf.PI * 2f / count;
+                var go = new GameObject($"Spot{i}");
+                go.transform.SetParent(lamps.transform, false);
+                // Positions are in the unscaled child space, so they are divided
+                // back out too.
+                go.transform.localPosition =
+                    new Vector3(Mathf.Cos(ang) * radius, 1.5f, Mathf.Sin(ang) * radius) / scale;
+
+                // Tilted in towards the figure rather than straight up, so the
+                // cone actually lands on it.
+                // localRotation, not rotation: the direction is worked out in
+                // this child's own space, and the monument is turned three
+                // quarters on to the road -- assigning a local vector to a world
+                // rotation swung every cone off by that yaw, which put the light
+                // on the plinth and nothing on the rider.
+                Vector3 aim = new Vector3(0f, height * 0.8f, 0f) / scale;
+                go.transform.localRotation = Quaternion.LookRotation(
+                    (aim - go.transform.localPosition).normalized, Vector3.up);
+
+                var light = go.AddComponent<Light>();
+                light.type = LightType.Spot;
+                light.color = (i % 2 == 0) ? SpotWarm : SpotCool;
+                light.range = height * 1.9f;
+                // Narrow, and set back a little further than feels natural.
+                // A wide cone from close in dumps everything on the plinth, which
+                // is the nearest thing to it and takes the light squarely; a
+                // tighter one thrown from further out carries up to the rider.
+                light.spotAngle = 34f;
+                light.intensity = 4.5f;
+                // Shadows off deliberately. Four shadow-casting spots on a
+                // distant prop is real cost for something usually a few dozen
+                // pixels tall, and they would fight the sun's own shadow.
+                light.shadows = LightShadows.None;
+                // Per-pixel. Vertex lighting was the cheap choice and looked it:
+                // the figure is built from small primitives with few vertices to
+                // interpolate between, so a cone across it barely registered.
+                light.renderMode = LightRenderMode.ForcePixel;
+            }
+
+            Debug.Log($"[HilltopStatue] {count} spotlights, radius {radius:F0} m, " +
+                      $"range {height * 1.9f:F0} m");
         }
 
         /// <summary>

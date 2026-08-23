@@ -28,12 +28,20 @@ namespace KickrWorld
 
         // Wide enough for a saved row's "distance / climbing / date" line to fit
         // beside its Load and delete buttons without the date being clipped.
-        const float PanelWidth = 372f;
+        const float NarrowWidth = 372f;
         const float RowHeight = 30f;
+
+        // The generate page is set while looking at it from a bike, at arm's
+        // length, usually mid-ride. Everything on it is drawn at roughly double
+        // the linear size of the other pages -- four times the area -- and the
+        // slider gets a track and thumb of its own rather than the 18 px default,
+        // which is a hard target to hit with a mouse and unreadable from further
+        // away than a desk.
+        float PanelWidth => _page == Page.Generate ? 760f : NarrowWidth;
 
         float PanelHeight => _page switch
         {
-            Page.Generate => 214f,
+            Page.Generate => 428f,
             Page.SaveAs => 150f,
             Page.Load => 92f + Mathf.Clamp(SavedCourses.All.Count, 1, 5) * 42f,
             _ => 288f,
@@ -41,6 +49,7 @@ namespace KickrWorld
 
         Texture2D _pixel;
         GUIStyle _button, _small, _title, _rowName, _rowMeta;
+        GUIStyle _bigLabel, _bigHint, _bigTitle, _bigButton, _bigSlider, _bigThumb;
         string _saveName = "";
         bool _focusPending;
         Vector2 _scroll;
@@ -282,52 +291,97 @@ namespace KickrWorld
 
         void DrawGenerate(float px, float py)
         {
-            float y = py + 12f;
-            float w = PanelWidth - 28f;
+            EnsureBigStyles();
 
-            GUI.Label(new Rect(px + 14f, y, w, 18f), "NEW WORLD", _title);
-            y += 22f;
+            float pad = 28f;
+            float y = py + 24f;
+            float w = PanelWidth - pad * 2f;
 
-            // 20 high, not 18: at this font the descender of the "g" in
-            // "Climbing" is clipped off by an 18 px rect.
-            GUI.Label(new Rect(px + 14f, y, w, 20f),
-                      $"Distance      {Units.DistanceText(_genLapM)}", _rowName);
-            y += 20f;
-            // Half-kilometre steps: the slider is 344 px for 32 km, so without
-            // snapping the number jitters by tens of metres as the mouse moves.
+            GUI.Label(new Rect(px + pad, y, w, 26f), "NEW WORLD", _bigTitle);
+            y += 40f;
+
+            GUI.Label(new Rect(px + pad, y, w, 40f),
+                      $"Distance      {Units.DistanceText(_genLapM)}", _bigLabel);
+            y += 48f;
+            // Half-kilometre steps: without snapping, the number jitters by tens
+            // of metres as the mouse moves.
             _genLapM = Mathf.Round(
-                GUI.HorizontalSlider(new Rect(px + 14f, y, w, 18f),
-                                     _genLapM, MinLapM, MaxLapM) / 500f) * 500f;
-            y += 34f;
+                GUI.HorizontalSlider(new Rect(px + pad, y, w, 34f),
+                                     _genLapM, MinLapM, MaxLapM,
+                                     _bigSlider, _bigThumb) / 500f) * 500f;
+            y += 70f;
 
-            // The ceiling moves with the distance, so a lap shortened under a
+            // The ceiling moves with the distance, so shortening the lap under a
             // high climb setting has to bring the climb down with it.
             float lo = MinClimb(_genLapM), hi = MaxClimb(_genLapM);
             _genClimbM = Mathf.Clamp(_genClimbM, lo, hi);
 
-            GUI.Label(new Rect(px + 14f, y, w, 20f),
-                      $"Climbing      {Units.ElevationText(_genClimbM)}", _rowName);
-            y += 20f;
+            GUI.Label(new Rect(px + pad, y, w, 40f),
+                      $"Climbing      {Units.ElevationText(_genClimbM)}", _bigLabel);
+            y += 48f;
             _genClimbM = Mathf.Round(
-                GUI.HorizontalSlider(new Rect(px + 14f, y, w, 18f),
-                                     _genClimbM, lo, hi) / 25f) * 25f;
-            y += 26f;
+                GUI.HorizontalSlider(new Rect(px + pad, y, w, 34f),
+                                     _genClimbM, lo, hi,
+                                     _bigSlider, _bigThumb) / 25f) * 25f;
+            y += 64f;
 
-            GUI.Label(new Rect(px + 14f, y, w, 18f),
+            GUI.Label(new Rect(px + pad, y, w, 28f),
                       $"{Character(_genLapM, _genClimbM)}  ·  roughly " +
                       $"{Mathf.RoundToInt(_genClimbM / Mathf.Max(0.1f, _genLapM / 1000f))} m per km  ·  approximate",
-                      _small);
-            y += 26f;
+                      _bigHint);
+            y += 48f;
 
-            float half = (w - 8f) * 0.5f;
-            if (GUI.Button(new Rect(px + 14f, y, half, RowHeight), "Cancel", _button))
+            float bh = 62f;
+            float half = (w - 16f) * 0.5f;
+            if (GUI.Button(new Rect(px + pad, y, half, bh), "Cancel", _bigButton))
                 _page = Page.Main;
-            if (GUI.Button(new Rect(px + 14f + half + 8f, y, half, RowHeight), "Generate", _button))
+            if (GUI.Button(new Rect(px + pad + half + 16f, y, half, bh), "Generate", _bigButton))
             {
                 Regenerator?.Regenerate(Random.Range(1, int.MaxValue), _genLapM, _genClimbM);
                 _page = Page.Main;
                 IsOpen = false;
             }
+        }
+
+        /// <summary>
+        /// Larger styles for the generate page, including a slider built by hand.
+        ///
+        /// GUI.HorizontalSlider takes its track and thumb from the skin, and the
+        /// built-in thumb is about 10 px wide however large a rect it is given --
+        /// so passing a taller rect alone widens the travel and leaves the grab
+        /// handle just as small. Both have to be supplied.
+        /// </summary>
+        void EnsureBigStyles()
+        {
+            if (_bigLabel != null) return;
+
+            _bigTitle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 18, fontStyle = FontStyle.Bold,
+                normal = { textColor = new Color(1f, 1f, 1f, 0.55f) },
+            };
+            _bigLabel = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 30, fontStyle = FontStyle.Bold,
+                normal = { textColor = Color.white },
+            };
+            _bigHint = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 18,
+                normal = { textColor = new Color(1f, 1f, 1f, 0.75f) },
+            };
+            _bigButton = new GUIStyle(GUI.skin.button) { fontSize = 22, fontStyle = FontStyle.Bold };
+
+            _bigSlider = new GUIStyle(GUI.skin.horizontalSlider)
+            {
+                fixedHeight = 26f,
+                margin = new RectOffset(0, 0, 0, 0),
+            };
+            _bigThumb = new GUIStyle(GUI.skin.horizontalSliderThumb)
+            {
+                fixedHeight = 40f,
+                fixedWidth = 40f,
+            };
         }
 
         void DrawSaveAs(float px, float py)
