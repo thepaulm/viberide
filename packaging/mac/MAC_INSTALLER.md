@@ -35,9 +35,9 @@ bash packaging/mac/make_installer.sh --app /Applications/VibeRide.app --dmg
 
 | | What it does | Runs scripts | Overwrite |
 | --- | --- | --- | --- |
-| **zip** (today) | unpack, double-click the installer app inside | yes, our own | installer deletes the old bundle |
+| **zip** | unpack, double-click the installer app inside | yes, our own | installer deletes the old bundle |
 | **.dmg** | mounts as a volume; drag the app to Applications | no | Finder asks to Replace |
-| **.pkg** | double-click, wizard, installs to /Applications | yes, if you add them | native, handled by Installer |
+| **.pkg** (shipped) | double-click, wizard, installs to /Applications | yes, if you add them | native, handled by Installer |
 
 A `.dmg` is not an installer — it is a folder that mounts. It cannot run
 anything, so it works here only because the app now sets itself up on first
@@ -125,38 +125,60 @@ pkgbuild --root pkgroot --identifier com.viberide.app --version 0.8.3 \
 without it the `.dmg` is the uncompressed size of the bundle, about 112 MB
 against 46.
 
-## What I could not test
+## What actually happened when it was first run
 
-All of the above was written on Windows and has never been run. `hdiutil`,
-`pkgbuild`, `codesign` and `spctl` do not exist here, and neither does any way
-to mount a disk image or run an installer package. The commands are the standard
-invocations and the script is defensive about paths, but you are the first
-execution.
+All of the above was written on Windows without ever being run — `hdiutil`,
+`pkgbuild`, `codesign` and `spctl` do not exist there. It has since been run on
+a Mac against the v0.8.3 release zip. Both artifacts built, the `.pkg` installs
+and the app runs. What the first run turned up:
 
-Things worth checking, in the order they would fail:
+- **One real bug.** `VERSION.txt` is written by `release.ps1`, so its lines end
+  CRLF, and the parsed version carried a trailing carriage return into every
+  file name — `VibeRide-0.8.3\r.dmg`, a volume named `VibeRide 0.8.3\r`, and the
+  same in the pkg's version field. It is an unusually good disguise: `ls` prints
+  the name looking correct, while `stat`, `cp` and `hdiutil attach` all report
+  "No such file or directory". Fixed by stripping `\r` where the version is
+  parsed.
+- **`codesign --deep` was fine.** No nested-code complaint; the four dylibs
+  under `Contents/Frameworks` sign and validate, and the bundle satisfies its
+  designated requirement.
+- **`spctl` rejects it**, exactly as described above, and that is still correct.
+- **The bundle survives packaging intact** — universal (`x86_64 arm64`), the
+  Bluetooth usage strings still in `Info.plist`, and the Python bridge still
+  under `Contents/Resources`, all of it inside a signature that now validates.
 
-1. **The script finds the app.** It looks inside `Install VibeRide.app` first,
-   then for a top-level `VibeRide.app`. It prints the path it chose.
-2. **`codesign --verify` passes.** If it complains about nested code, the
-   `--deep` flag is doing the wrong thing for this bundle and the nested
-   binaries need signing individually, innermost first.
-3. **The `.dmg` mounts and the app runs from it.**
-4. **The `.pkg` installs to /Applications** and the installed app launches.
-5. **Bluetooth still works** — the point of the signing. The status panel should
-   reach `connected`, not sit at "no BLE devices visible at all".
-
-One known wrinkle: an ad-hoc signature changes whenever the binary changes, so
-each new build looks like a different app to the privacy system and macOS may
-ask for Bluetooth permission again. That is expected, not a fault. To force the
-prompt deliberately:
+One wrinkle worth knowing: an ad-hoc signature changes whenever the binary
+changes, so each new build looks like a different app to the privacy system and
+macOS may ask for Bluetooth permission again. That is expected, not a fault. To
+force the prompt deliberately:
 
 ```bash
 tccutil reset Bluetooth com.viberide.app
 ```
 
-## If it works
+Another, cosmetic: the app's own `Info.plist` still says
+`CFBundleShortVersionString = 1.0`, which is what Finder's Get Info shows. It
+does not affect the pkg — that is versioned from `VERSION.txt` — but
+`make_installer.sh --app` has nothing else to go on and will name its output
+`VibeRide-1.0.pkg`. Fixing it means setting the version in Unity's player
+settings.
 
-Tell me which of the two you prefer and I will wire it into the release process
-— though note that step has to run on your Mac, so `release.ps1` on the Windows
-side would produce the zip as now and hand off to this script afterwards. The
-zip route stays regardless, for anyone without a Mac to build on.
+## It works, and it is wired into releases
+
+The `.pkg` won. [`../RELEASING.md`](../RELEASING.md) has the flow: `release.ps1`
+publishes the zip from the Windows host, then `release_pkg.sh` on the Mac builds
+the `.pkg` from that zip, uploads it to the same release, and rewrites the notes
+to lead with it.
+
+```bash
+bash packaging/mac/release_pkg.sh              # newest release
+bash packaging/mac/release_pkg.sh v0.8.4       # a specific tag
+bash packaging/mac/release_pkg.sh v0.8.4 --dry-run
+```
+
+It refuses to publish a pkg whose version does not match the tag, or one that
+does not install to `/Applications`.
+
+`make_installer.sh` stays the way to build either artifact by hand, and the
+`.dmg` half of it is still there for anyone who wants one — it is just not
+published. The zip route stays regardless, for anyone without a Mac to build on.

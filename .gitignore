@@ -38,6 +38,8 @@ unity/Captures/
 # did not match the versioned name the release script produces
 # (VibeRide-0.1.0-mac-universal.zip) -- and a 45 MB zip went into history.
 VibeRide-*.zip
+VibeRide-*.pkg
+VibeRide-*.dmg
 KickrWorld-*.zip
 report
 report-*

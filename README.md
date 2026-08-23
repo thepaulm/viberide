@@ -48,19 +48,18 @@ Grab the latest build from the
 [Releases page](https://github.com/thepaulm/viberide/releases) — macOS universal
 (Apple Silicon + Intel), no Unity required.
 
-Unzip and double-click **Install VibeRide**. It replaces any previous copy in
-/Applications, clears the Gatekeeper quarantine flag, re-signs the app so macOS
-can attach a Bluetooth permission to it, and opens it. Run it again to upgrade —
-there is nothing to delete first.
+Download the **.pkg** and double-click it. It is an ordinary macOS installer —
+a wizard, a progress bar, and VibeRide in /Applications, replacing any previous
+copy. Run it again to upgrade; there is nothing to delete first.
 
 Saved courses live in `~/Library/Application Support/VibeRide/`, not inside the
 app, so upgrading never loses them.
 
-macOS blocks it the first time, because the app is not signed with a paid Apple
+macOS blocks it the first time, because it is not signed with a paid Apple
 Developer ID. Open **System Settings → Privacy & Security**, find the message
-naming Install VibeRide, and click **Open Anyway**. Once only — the installer
-clears the flag on the app it installs. Or download with `curl` instead, which
-does not quarantine anything and so is never blocked; see `START_HERE.md`.
+naming the installer, and click **Open Anyway**. Once only. Or download with
+`curl` instead, which does not quarantine anything and so is never blocked —
+the command is in the release notes.
 
 The first launch takes about a minute while the app builds the Python environment
 the trainer bridge needs; the status panel shows the progress. It uses a Python
@@ -68,7 +67,9 @@ the trainer bridge needs; the status panel shows the progress. It uses a Python
 it genuinely cannot find any. After that it starts in a couple of seconds, and it
 runs the bridge itself and shuts it down when you quit.
 
-Full instructions are in `START_HERE.md` inside the zip.
+The zip on the same release is the identical build packaged the older way:
+unzip and double-click **Install VibeRide**, with the long-form instructions in
+`START_HERE.md` inside it. Either route works — the .pkg is fewer steps.
 
 No trainer? Launch it anyway and hold **W** to pedal, **Shift** to surge.
 

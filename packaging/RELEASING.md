@@ -1,19 +1,42 @@
 # Releasing
 
-> Building a `.dmg` or `.pkg` needs a Mac; see
-> [mac/MAC_INSTALLER.md](mac/MAC_INSTALLER.md). Everything below runs on the
-> Windows build host and produces the zip.
+A release takes two machines. Unity only runs on the Windows build host, and
+`pkgbuild` and `codesign` only exist on a Mac, so the zip is published from one
+and the `.pkg` people actually download is added from the other.
 
-One command, from a clean tree to a published binary:
+## 1. Windows: build and publish the zip
 
 ```powershell
 powershell -File packaging\mac\release.ps1 -Version 0.2.0
 ```
 
 That builds the macOS player, stages the package, zips it, and attaches it to a
-GitHub Release tagged `v0.2.0`.
+GitHub Release tagged `v0.2.0`, with notes describing the zip.
+
+## 2. Mac: add the .pkg
+
+```bash
+bash packaging/mac/release_pkg.sh          # newest release
+bash packaging/mac/release_pkg.sh v0.2.0   # or a specific tag
+```
+
+That pulls the zip back off the release, signs the app properly, builds
+`VibeRide-0.2.0.pkg`, uploads it, and rewrites the release notes to lead with
+it. `--dry-run` does everything except the upload and leaves the pkg in the
+repo root for inspection.
+
+Signing is the reason this half cannot be faked on Windows: Unity ad-hoc signs
+the app, then the Windows staging adds the bridge and the Bluetooth usage
+strings, which invalidates that signature — and macOS keys the Bluetooth grant
+to it. [mac/MAC_INSTALLER.md](mac/MAC_INSTALLER.md) has the detail, plus how to
+build a `.dmg` if you want one.
+
+Stopping after step 1 leaves a correct, zip-only release; the notes written
+there describe the zip and stay true. Step 2 only ever adds.
 
 ## Prerequisites, once
+
+On the Windows host:
 
 - Unity 6000.2.8f1 with **Mac Build Support (Mono)**
 - GitHub CLI, authenticated:
@@ -26,7 +49,12 @@ GitHub Release tagged `v0.2.0`.
   Authentication is interactive and browser-based — the script never handles a
   token itself.
 
-## Useful flags
+On the Mac:
+
+- the Xcode command line tools (`xcode-select --install`)
+- `gh`, likewise authenticated (`brew install gh && gh auth login`)
+
+## Useful flags for release.ps1
 
 | Flag | Effect |
 | --- | --- |

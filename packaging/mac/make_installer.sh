@@ -62,7 +62,10 @@ if [ -z "$APP" ]; then
     [ -n "$APP" ] || die "No VibeRide.app inside $ZIP"
 
     if [ -z "$VERSION" ] && [ -f "$WORK/unzip/VERSION.txt" ]; then
-        VERSION="$(awk 'NR==1{print $2}' "$WORK/unzip/VERSION.txt")"
+        # Written by release.ps1 on Windows, so the lines end CRLF and the
+        # version would otherwise carry a trailing carriage return into every
+        # file name and into the volume name.
+        VERSION="$(awk 'NR==1{print $2}' "$WORK/unzip/VERSION.txt" | tr -d '\r')"
     fi
 fi
 [ -d "$APP" ] || die "No such app: $APP"
