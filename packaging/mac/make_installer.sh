@@ -142,9 +142,41 @@ if [ "$PKG" = 1 ]; then
     PKGOUT="$OUT/VibeRide-$VERSION-Installer.pkg"
     rm -f "$PKGOUT"
     # --root holds what lands in --install-location, so this installs
-    # /Applications/VibeRide.app and replaces any bundle already there. The app
-    # is signed already, so there is no postinstall script to go wrong.
+    # /Applications/VibeRide.app. The app is signed already, so there is no
+    # postinstall script to go wrong.
+    #
+    # It does NOT replace whatever is already there on its own, which is the
+    # thing this block used to get wrong. pkgbuild infers a *bundle* component
+    # from the payload, and a bundle component is version-checked and
+    # relocatable by default -- both decided by the Installer, silently:
+    #
+    #   BundleIsVersionChecked  compare my CFBundleShortVersionString against
+    #                           the installed one, and skip the component if
+    #                           the installed copy looks newer
+    #   BundleIsRelocatable     if a bundle with this identifier already exists
+    #                           somewhere else, install over THAT instead of
+    #                           --install-location
+    #
+    # The version check cost three releases. Unity leaves the bundle version at
+    # 1.0 in anything built before release.ps1 started passing -buildVersion,
+    # and every version shipped since is 0.x, so 1.0 beat 0.9.1 and the pkg
+    # no-opped -- writing a receipt, reporting success, and never touching
+    # /Applications. From install.log:
+    #
+    #   PackageKit: Skipping component "com.viberide.app" (0.9.1-0.0.0-*)
+    #   because the version 1.0.0-0.0.0-* is already installed
+    #   at /Applications/VibeRide.app.
+    #
+    # There is nothing to compare: this package carries one specific build and
+    # the only correct thing to do is install it. Relocation is the same
+    # argument about place rather than version -- ~/Applications is the copy
+    # that bites, because the old zip installer falls back to it.
+    COMPONENTS="$WORK/components.plist"
+    pkgbuild --analyze --root "$STAGE" "$COMPONENTS" | sed 's/^/    /'
+    plutil -replace 0.BundleIsVersionChecked -bool false "$COMPONENTS"
+    plutil -replace 0.BundleIsRelocatable -bool false "$COMPONENTS"
     pkgbuild --root "$STAGE" \
+             --component-plist "$COMPONENTS" \
              --identifier "$IDENT" \
              --version "$VERSION" \
              --install-location /Applications \
