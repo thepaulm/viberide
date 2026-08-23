@@ -19,17 +19,34 @@
 
 set -euo pipefail
 
-# Where the download was unpacked. Normally Contents/MacOS inside the installer
-# bundle, three levels below the folder holding VibeRide.app -- but the same
-# script is also reachable directly, so do not assume.
+# The app being installed travels INSIDE this bundle, at Contents/Resources.
+#
+# It used to sit beside the installer, and that fails the moment anyone actually
+# double-clicks the thing. macOS runs a quarantined app through App
+# Translocation: rather than launching it where it sits, it copies the bundle to
+# a randomised read-only path under /private/var/folders/.../AppTranslocation/
+# and runs it from there. Sibling files do not come along. So the installer
+# looked next to itself, found an empty temporary directory, and reported that
+# VibeRide.app was missing while the rider was looking straight at it.
+#
+# Carrying the payload inside means there is nothing to find. Translocation
+# copies the whole bundle, contents and all.
 SELF="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$SELF"
-case "$SELF" in
-    */Contents/MacOS) ROOT="$(cd "$SELF/../../.." && pwd)" ;;
-esac
-cd "$ROOT"
 
-APP="VibeRide.app"
+APP=""
+for candidate in "$SELF/../Resources/VibeRide.app" "$SELF/VibeRide.app"; do
+    [ -d "$candidate" ] && { APP="$(cd "$candidate" && pwd)"; break; }
+done
+# Last resort: beside the installer bundle, for a tree that was never packaged.
+if [ -z "$APP" ]; then
+    case "$SELF" in
+        */Contents/MacOS)
+            outside="$SELF/../../../VibeRide.app"
+            [ -d "$outside" ] && APP="$(cd "$outside" && pwd)"
+            ;;
+    esac
+fi
+
 NAME="VibeRide"
 GUI=0
 [ -t 1 ] || GUI=1
@@ -58,14 +75,16 @@ alert() {   # alert <title> <message> [stop]
 
 die() { alert "VibeRide installer failed" "$1" stop; exit 1; }
 
-[ -d "$APP" ] || die "Cannot find $APP. Keep the installer in the same folder as the app, and run it from there."
+[ -n "$APP" ] || die "This installer is damaged -- it has no copy of VibeRide.app inside it. Download the zip again."
 
 # --- where it goes -----------------------------------------------------------
 # /Applications is writable by admin users without sudo. Where it is not, use
 # the per-user one rather than asking for a password.
 DEST="/Applications"
 [ -w "$DEST" ] || { DEST="$HOME/Applications"; mkdir -p "$DEST"; }
-TARGET="$DEST/$APP"
+# $APP is now an absolute path to the payload, so the destination has to be
+# built from the bundle NAME, not from $APP.
+TARGET="$DEST/$(basename "$APP")"
 
 # --- make way ----------------------------------------------------------------
 if pgrep -x "$NAME" >/dev/null 2>&1; then
@@ -121,4 +140,6 @@ Wake the trainer by spinning the cranks, and make sure nothing else holds it -- 
 
 macOS will ask for Bluetooth permission on the first scan. Allow it, or the trainer is never found.$NOTE"
 
-open "$TARGET"
+# Already installed by this point; a failure to bring it to the front is not
+a failed install and must not be reported as one.
+open "$TARGET" || true

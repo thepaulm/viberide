@@ -80,11 +80,18 @@ $stage = Join-Path $env:TEMP "viberide-release\VibeRide"
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-Copy-Item $app (Join-Path $stage "VibeRide.app") -Recurse
 # The installer is an .app, not a .command. Gatekeeper blocks both, but only an
 # .app gets an "Open Anyway" button in System Settings > Privacy & Security --
 # a script is refused with no visible way to allow it.
+#
+# The app being installed goes INSIDE the installer, under Contents/Resources.
+# macOS runs a quarantined app through App Translocation -- from a randomised
+# read-only copy, without its siblings -- so an installer that expects to find
+# the payload beside itself finds an empty directory instead.
 Copy-Item (Join-Path $PSScriptRoot "installer\Install VibeRide.app") $stage -Recurse
+$payload = Join-Path $stage "Install VibeRide.app\Contents\Resources"
+New-Item -ItemType Directory -Force -Path $payload | Out-Null
+Copy-Item $app (Join-Path $payload "VibeRide.app") -Recurse
 Copy-Item (Join-Path $PSScriptRoot "install.sh")        $stage
 Copy-Item (Join-Path $PSScriptRoot "START_HERE.md")     $stage
 

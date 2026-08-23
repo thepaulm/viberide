@@ -102,8 +102,9 @@ def main() -> int:
         # entry silently started checking the INSTALLER once that became an .app
         # too, leaving the thing it was written to protect -- the app's own
         # launcher -- unverified.
-        for label, needle in (("app", "VibeRide.app/Contents/MacOS/"),
-                              ("installer", "Install VibeRide.app/Contents/MacOS/")):
+        for label, needle in (
+                ("app", "Install VibeRide.app/Contents/Resources/VibeRide.app/Contents/MacOS/"),
+                ("installer", "Install VibeRide.app/Contents/MacOS/install")):
             entry = next((e for e in entries
                           if e.filename.startswith(needle) and not e.is_dir()), None)
             if entry is None:

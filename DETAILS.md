@@ -732,6 +732,16 @@ depends on the *kind* of file:
   allow it. The only route left was a terminal, which is precisely what the
   installer existed to avoid.
 
+**The app being installed travels inside the installer**, at
+`Contents/Resources/VibeRide.app`. It sat beside it at first, which fails the
+moment anyone double-clicks: macOS runs a quarantined app through **App
+Translocation**, copying the bundle to a randomised read-only path under
+`/private/var/folders/.../AppTranslocation/` and running it from there. Siblings
+do not come along, so the installer looked next to itself, found an empty
+temporary directory, and reported the app missing while it was plainly visible in
+Finder. Carrying the payload inside means there is nothing to find — translocation
+copies the whole bundle, contents and all.
+
 So the same script now lives at `Install VibeRide.app/Contents/MacOS/install`
 with a minimal `Info.plist` beside it — an app bundle is only a directory with a
 launchable binary and a plist, and `makezip.py` already marks anything under

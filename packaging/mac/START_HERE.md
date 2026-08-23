@@ -27,8 +27,14 @@ Once only, and only for the installer - it clears the flag on the app it install
 so VibeRide itself opens normally afterwards.
 
 Do not bother hunting for right-click > Open. That bypass was removed in macOS 15,
-which is why the previous release shipped a `.command` file that could not be
+which is why an earlier release shipped a `.command` file that could not be
 approved from Finder at all.
+
+The app itself is inside the installer, at `Contents/Resources` - right-click the
+installer and choose **Show Package Contents** if you ever want it directly. It
+lives there rather than beside the installer because macOS runs a quarantined app
+from a randomised temporary copy without its neighbouring files, so an installer
+that looks beside itself finds nothing.
 
 ### Or skip Gatekeeper entirely
 
