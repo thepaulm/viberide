@@ -18,7 +18,7 @@ namespace KickrWorld
         public float ButtonHeight = 34f;
         public float Margin = 16f;
 
-        enum Page { Main, SaveAs, Load }
+        enum Page { Main, Generate, SaveAs, Load }
 
         public bool IsOpen { get; private set; }
         Page _page = Page.Main;
@@ -33,6 +33,7 @@ namespace KickrWorld
 
         float PanelHeight => _page switch
         {
+            Page.Generate => 214f,
             Page.SaveAs => 150f,
             Page.Load => 92f + Mathf.Clamp(SavedCourses.All.Count, 1, 5) * 42f,
             _ => 288f,
@@ -64,6 +65,7 @@ namespace KickrWorld
                 IsOpen = true;
                 if (args[i + 1].Equals("saveas", System.StringComparison.OrdinalIgnoreCase)) OpenSaveAs();
                 else if (args[i + 1].Equals("load", System.StringComparison.OrdinalIgnoreCase)) _page = Page.Load;
+                else if (args[i + 1].Equals("generate", System.StringComparison.OrdinalIgnoreCase)) OpenGenerate();
             }
         }
 
@@ -157,6 +159,7 @@ namespace KickrWorld
 
                 switch (_page)
                 {
+                    case Page.Generate: DrawGenerate(px, py); break;
                     case Page.SaveAs: DrawSaveAs(px, py); break;
                     case Page.Load: DrawLoad(px, py, ph); break;
                     default: DrawMain(px, py); break;
@@ -194,12 +197,9 @@ namespace KickrWorld
             y += 20f;
 
             if (GUI.Button(new Rect(px + 14f, y, w, RowHeight), "Regenerate", _button))
-            {
-                Regenerator?.Regenerate();
-                IsOpen = false;
-            }
+                OpenGenerate();
             y += RowHeight + 2f;
-            GUI.Label(new Rect(px + 14f, y, w, 16f), "New seed: fresh terrain and a new course", _small);
+            GUI.Label(new Rect(px + 14f, y, w, 16f), "Fresh terrain, and a course you choose", _small);
             y += 22f;
 
             float half = (w - 8f) * 0.5f;
@@ -216,6 +216,108 @@ namespace KickrWorld
             y += 24f;
 
             if (GUI.Button(new Rect(px + 14f, y, w, RowHeight), "Exit", _button)) Quit();
+        }
+
+        // Bounds for the two sliders.
+        //
+        // 40 km is not arbitrary: a longer lap grows the terrain to hold it, and
+        // past roughly this the 2049-sample heightmap is stretched far enough
+        // that the ground starts to look smoothed.
+        const float MinLapM = 8000f;
+        const float MaxLapM = 40000f;
+
+        // Climbing is expressed per kilometre because that is what bounds it, and
+        // 34 is measured rather than reasoned. Gradients are already near the 13%
+        // ceiling when the generator hands a course over, so how much a course
+        // can be scaled up depends on how steep it came out: across seeds the
+        // reachable figure ran 22 to 35 m/km, which no single slider bound can
+        // honour. Searching course seeds for one that fits (see
+        // WorldGen.FitAscent) lifted the worst case to 34.2, so 34 is a promise
+        // every seed can keep.
+        const float MinClimbPerKm = 5f;
+        const float MaxClimbPerKm = 34f;
+
+        float _genLapM = 25000f;
+        float _genClimbM = 600f;
+
+        void OpenGenerate()
+        {
+            // Start from the ride currently under the wheels, so the sliders open
+            // where the rider already is rather than at some default.
+            var route = World != null ? World.Route : null;
+            if (route != null)
+            {
+                _genLapM = Mathf.Clamp(route.Length, MinLapM, MaxLapM);
+                _genClimbM = route.Profile.TotalAscent;
+            }
+            _genClimbM = Mathf.Clamp(_genClimbM, MinClimb(_genLapM), MaxClimb(_genLapM));
+            _page = Page.Generate;
+        }
+
+        static float MinClimb(float lapM) => lapM / 1000f * MinClimbPerKm;
+        static float MaxClimb(float lapM) => lapM / 1000f * MaxClimbPerKm;
+
+        /// <summary>Plain-language name for how hilly a lap is, so the figure
+        /// means something without doing the division yourself -- and without
+        /// picking a unit, which the rider may have set either way.</summary>
+        static string Character(float lapM, float climbM)
+        {
+            float perKm = climbM / Mathf.Max(0.1f, lapM / 1000f);
+            if (perKm < 10f) return "flat";
+            if (perKm < 20f) return "rolling";
+            if (perKm < 32f) return "hilly";
+            if (perKm < 45f) return "mountainous";
+            return "brutal";
+        }
+
+        void DrawGenerate(float px, float py)
+        {
+            float y = py + 12f;
+            float w = PanelWidth - 28f;
+
+            GUI.Label(new Rect(px + 14f, y, w, 18f), "NEW WORLD", _title);
+            y += 22f;
+
+            // 20 high, not 18: at this font the descender of the "g" in
+            // "Climbing" is clipped off by an 18 px rect.
+            GUI.Label(new Rect(px + 14f, y, w, 20f),
+                      $"Distance      {Units.DistanceText(_genLapM)}", _rowName);
+            y += 20f;
+            // Half-kilometre steps: the slider is 344 px for 32 km, so without
+            // snapping the number jitters by tens of metres as the mouse moves.
+            _genLapM = Mathf.Round(
+                GUI.HorizontalSlider(new Rect(px + 14f, y, w, 18f),
+                                     _genLapM, MinLapM, MaxLapM) / 500f) * 500f;
+            y += 34f;
+
+            // The ceiling moves with the distance, so a lap shortened under a
+            // high climb setting has to bring the climb down with it.
+            float lo = MinClimb(_genLapM), hi = MaxClimb(_genLapM);
+            _genClimbM = Mathf.Clamp(_genClimbM, lo, hi);
+
+            GUI.Label(new Rect(px + 14f, y, w, 20f),
+                      $"Climbing      {Units.ElevationText(_genClimbM)}", _rowName);
+            y += 20f;
+            _genClimbM = Mathf.Round(
+                GUI.HorizontalSlider(new Rect(px + 14f, y, w, 18f),
+                                     _genClimbM, lo, hi) / 25f) * 25f;
+            y += 26f;
+
+            GUI.Label(new Rect(px + 14f, y, w, 18f),
+                      $"{Character(_genLapM, _genClimbM)}  ·  roughly " +
+                      $"{Mathf.RoundToInt(_genClimbM / Mathf.Max(0.1f, _genLapM / 1000f))} m per km  ·  approximate",
+                      _small);
+            y += 26f;
+
+            float half = (w - 8f) * 0.5f;
+            if (GUI.Button(new Rect(px + 14f, y, half, RowHeight), "Cancel", _button))
+                _page = Page.Main;
+            if (GUI.Button(new Rect(px + 14f + half + 8f, y, half, RowHeight), "Generate", _button))
+            {
+                Regenerator?.Regenerate(Random.Range(1, int.MaxValue), _genLapM, _genClimbM);
+                _page = Page.Main;
+                IsOpen = false;
+            }
         }
 
         void DrawSaveAs(float px, float py)
@@ -254,7 +356,8 @@ namespace KickrWorld
 
             if ((save || enter) && route != null)
             {
-                if (SavedCourses.Save(_saveName, World.Seed, route.Length, route.Profile.TotalAscent))
+                if (SavedCourses.Save(_saveName, World.Seed, route.Length, route.Profile.TotalAscent,
+                                      World.TargetLengthM, World.TargetAscentM))
                 {
                     Toast($"Saved \"{SavedCourses.Sanitise(_saveName)}\"");
                     _page = Page.Main;
@@ -302,7 +405,15 @@ namespace KickrWorld
 
                     if (GUI.Button(new Rect(content.width - 96f, ry + 5f, 58f, 28f), "Load", _button))
                     {
-                        Regenerator?.Regenerate(e.seed);
+                        // A course built to a request has to be reloaded the
+                        // same way: the seed alone gives the generator's own idea
+                        // of a lap, not the one that was asked for. Entries saved
+                        // before this existed carry zeroes and take the old path,
+                        // so they come back exactly as they were.
+                        if (e.targetLapM > 0f || e.targetClimbM > 0f)
+                            Regenerator?.Regenerate(e.seed, e.targetLapM, e.targetClimbM);
+                        else
+                            Regenerator?.Regenerate(e.seed);
                         Toast($"Loading \"{e.name}\"");
                         IsOpen = false;
                         _page = Page.Main;

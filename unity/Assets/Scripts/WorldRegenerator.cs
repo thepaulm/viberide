@@ -72,7 +72,23 @@ namespace KickrWorld
 
             int seed = 987654;
             if (i + 1 < args.Length && int.TryParse(args[i + 1], out var parsed)) seed = parsed;
-            Regenerate(seed);
+
+            // -lapkm and -climbm exercise the requested-course path without a
+            // human on the sliders, which is the only way to check what the
+            // gradient ceiling actually allows across the range.
+            float lapM = Num(args, "-lapkm", 0f) * 1000f;
+            float climbM = Num(args, "-climbm", 0f);
+            if (lapM > 0f || climbM > 0f) Regenerate(seed, lapM, climbM);
+            else Regenerate(seed);
+        }
+
+        static float Num(string[] args, string name, float fallback)
+        {
+            int i = System.Array.IndexOf(args, name);
+            return i >= 0 && i + 1 < args.Length &&
+                   float.TryParse(args[i + 1], System.Globalization.NumberStyles.Float,
+                                  System.Globalization.CultureInfo.InvariantCulture, out var v)
+                ? v : fallback;
         }
 
         public void Regenerate() => Regenerate(Random.Range(1, int.MaxValue));
@@ -80,6 +96,22 @@ namespace KickrWorld
         public void Regenerate(int seed)
         {
             if (Busy) return;
+            StartCoroutine(RegenerateRoutine(seed));
+        }
+
+        /// <summary>
+        /// Regenerate to a requested lap length and amount of climbing. Both are
+        /// remembered on the world, so a later plain Regenerate keeps the shape
+        /// of ride that was asked for and only changes the seed.
+        /// </summary>
+        public void Regenerate(int seed, float lengthM, float ascentM)
+        {
+            if (Busy) return;
+            if (World != null)
+            {
+                World.TargetLengthM = lengthM;
+                World.TargetAscentM = ascentM;
+            }
             StartCoroutine(RegenerateRoutine(seed));
         }
 
@@ -127,6 +159,15 @@ namespace KickrWorld
             Stage = "Applying terrain";
             yield return null;
             var data = Terrain.terrainData;
+            // A longer lap needs a larger map, and BuildRoute will have grown the
+            // settings to fit it. Resize before writing heights: the heightmap is
+            // the same 2049 samples either way, so this only changes what each
+            // one spans on the ground.
+            if (Mathf.Abs(data.size.x - settings.TerrainSize) > 1f)
+            {
+                Debug.Log($"[WorldRegenerator] terrain {data.size.x:F0} m -> {settings.TerrainSize:F0} m");
+                data.size = new Vector3(settings.TerrainSize, settings.TerrainHeight, settings.TerrainSize);
+            }
             data.SetHeights(0, 0, builder.Heights);
             // Push the CPU heightmap to the GPU copy. Without this the terrain's
             // derived data stays out of step with what we just wrote.

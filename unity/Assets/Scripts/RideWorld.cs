@@ -25,6 +25,11 @@ namespace KickrWorld
         public float RoadWidth = 7.5f;
         public int Seed = 20260816;
 
+        /// <summary>What the rider asked for, kept so a later regenerate keeps
+        /// the same shape of ride rather than reverting to the defaults.</summary>
+        public float TargetLengthM = 0f;
+        public float TargetAscentM = 0f;
+
         public RoutePath Route { get; private set; }
 
         /// <summary>Raised after a regenerate, so anything caching route-derived
@@ -48,6 +53,8 @@ namespace KickrWorld
             BaseElevation = BaseElevation,
             RoadWidth = RoadWidth,
             Seed = Seed,
+            TargetLengthM = TargetLengthM,
+            TargetAscentM = TargetAscentM,
         };
 
         void Awake()

@@ -55,6 +55,15 @@ namespace KickrWorld
 
         public float RoadWidth = 7.5f;
         public int Seed = 20260816;
+
+        /// <summary>Lap length to aim for, in metres. Zero keeps whatever the
+        /// loop happens to measure at RouteRadiusFraction.</summary>
+        public float TargetLengthM = 0f;
+
+        /// <summary>Metres of climbing to aim for over the lap. Zero leaves it to
+        /// the generator's own band. Capped by the gradient ceiling, so a large
+        /// ask over a short lap lands short.</summary>
+        public float TargetAscentM = 0f;
     }
 
     public static class WorldGen
@@ -91,23 +100,109 @@ namespace KickrWorld
 
         // --- route ----------------------------------------------------------
 
+        /// <summary>Room left between the outermost point of the loop and the
+        /// edge of the map: the road corridor, plus whatever a lake or a monument
+        /// beside it might reach for.</summary>
+        const float EdgeMargin = 460f;
+
+        static float ArcLength(Vector2[] loop)
+        {
+            float arc = 0f;
+            for (int i = 0; i < loop.Length; i++)
+                arc += Vector2.Distance(loop[i], loop[(i + 1) % loop.Length]);
+            return arc;
+        }
+
+        /// <summary>
+        /// Find a course that climbs close to <paramref name="target"/> metres.
+        ///
+        /// Scaling the gradients of one course is not enough on its own. The
+        /// generator already pushes its steepest feature near the 13% ceiling, so
+        /// how far a given course can be scaled up depends on how steep it
+        /// happened to come out -- measured across seeds, the reachable climbing
+        /// ranged from 22 to 35 m/km for the same request. A slider cannot honour
+        /// a promise like that.
+        ///
+        /// Climbing more over a fixed distance means spending more of the
+        /// distance climbing, which is a property of the course rather than
+        /// something a scale factor can produce. Rather than rewrite the
+        /// generator, this asks it for several courses and keeps whichever comes
+        /// closest. They are cheap -- no terrain is involved -- so a couple of
+        /// dozen attempts cost nothing next to the heightmap that follows.
+        ///
+        /// The loop, and so the terrain, is untouched by this: it is keyed off
+        /// the world seed and only the course varies.
+        /// </summary>
+        static CourseProfile FitAscent(int seed, float arc, float target, out float achieved)
+        {
+            CourseProfile best = null;
+            float bestErr = float.MaxValue;
+            achieved = 0f;
+
+            for (int i = 0; i < 24; i++)
+            {
+                var p = CourseProfile.CreateRandom(seed + i * 7919);
+                p.ScaleToLength(arc);
+                float got = p.ScaleAscentTo(target);
+
+                float err = Mathf.Abs(got - target);
+                if (err < bestErr) { bestErr = err; best = p; achieved = got; }
+                if (err <= target * 0.02f) break;
+            }
+            return best;
+        }
+
         public static RoutePath BuildRoute(WorldSettings s)
         {
             var center = new Vector2(s.TerrainSize * 0.5f, s.TerrainSize * 0.5f);
             float radius = s.TerrainSize * s.RouteRadiusFraction;
             var loop = RoutePath.BuildLoop(center, radius, 4096, s.Seed);
+            float arc = ArcLength(loop);
+
+            if (s.TargetLengthM > 100f)
+            {
+                // Arc length is linear in radius, so one measurement gives the
+                // radius needed exactly and there is nothing to search for.
+                float k = s.TargetLengthM / arc;
+
+                // The loop wanders up to about a third outside its nominal
+                // radius, and the default already sits close to the edge of a
+                // 10 km map -- so a longer lap has to grow the terrain rather
+                // than run off it. The heightmap resolution is fixed, so this
+                // costs no memory at all; it only makes each texel larger.
+                float reach = 0f;
+                foreach (var p in loop) reach = Mathf.Max(reach, Vector2.Distance(p, center));
+                float needed = 2f * (reach * k + EdgeMargin);
+                if (needed > s.TerrainSize) s.TerrainSize = needed;
+
+                center = new Vector2(s.TerrainSize * 0.5f, s.TerrainSize * 0.5f);
+                loop = RoutePath.BuildLoop(center, radius * k, 4096, s.Seed);
+                arc = ArcLength(loop);
+            }
 
             // Seed-driven, so Regenerate gives a genuinely different ride rather
             // than the same climbs draped over new scenery.
-            var profile = CourseProfile.CreateRandom(s.Seed);
+            //
+            // Stretching the elevation profile onto the loop's true arc length
+            // keeps the gradients and changes only the lengths, so the road never
+            // has to pinch to fit.
+            CourseProfile profile;
+            if (s.TargetAscentM > 1f)
+            {
+                profile = FitAscent(s.Seed, arc, s.TargetAscentM, out float got);
+                if (Mathf.Abs(got - s.TargetAscentM) > s.TargetAscentM * 0.05f)
+                    Debug.LogWarning($"[WorldGen] asked for {s.TargetAscentM:F0} m of climbing " +
+                                     $"over {arc / 1000f:F1} km, got {got:F0} m -- " +
+                                     $"the {CourseProfile.MaxGrade * 100f:F0}% gradient ceiling is the limit.");
+            }
+            else
+            {
+                profile = CourseProfile.CreateRandom(s.Seed);
+                profile.ScaleToLength(arc);
+            }
 
-            // Measure the loop's true arc length, then stretch the elevation
-            // profile onto it. Gradients survive; only lengths change. Doing it
-            // this way means the road never has to stretch or pinch to fit.
-            float arc = 0f;
-            for (int i = 0; i < loop.Length; i++)
-                arc += Vector2.Distance(loop[i], loop[(i + 1) % loop.Length]);
-            profile.ScaleToLength(arc);
+            Debug.Log($"[WorldGen] lap {arc / 1000f:F2} km, {profile.TotalAscent:F0} m of climbing, " +
+                      $"terrain {s.TerrainSize / 1000f:F1} km square");
 
             return new RoutePath(loop, profile, s.BaseElevation);
         }

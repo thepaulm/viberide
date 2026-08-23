@@ -147,6 +147,31 @@ namespace KickrWorld
             return max;
         }
 
+        /// <summary>
+        /// Scale every gradient so the lap climbs about <paramref name="target"/>
+        /// metres, and report what was actually achieved.
+        ///
+        /// One factor across every gradient is the whole trick: net elevation is
+        /// a sum that is already zero, and scaling zero leaves it at zero, so the
+        /// lap still joins itself exactly.
+        ///
+        /// What limits the answer is the ceiling on any single gradient. Asking
+        /// for more climbing than MaxGrade allows over this much road reduces the
+        /// factor instead of producing a wall, so the result can be less than was
+        /// asked for -- which is why this returns the real figure rather than
+        /// assuming it succeeded.
+        /// </summary>
+        public float ScaleAscentTo(float target)
+        {
+            if (target <= 0f || TotalAscent <= 0.01f) return TotalAscent;
+
+            float k = target / TotalAscent;
+            float maxAbs = MaxAbsGrade();
+            if (maxAbs * k > MaxGrade) k = MaxGrade / Mathf.Max(maxAbs, 0.0001f);
+            if (Mathf.Abs(k - 1f) > 0.005f) ScaleGrades(k);
+            return TotalAscent;
+        }
+
         /// <summary>Scale every gradient by k. Net elevation is preserved when it
         /// is already zero, since scaling a sum of zero leaves it at zero.</summary>
         void ScaleGrades(float k)

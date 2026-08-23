@@ -1,0 +1,7 @@
+asked  8 km /   440 m  ->  [WorldGen] lap 8.00 km, 282 m of climbing, terrain 10.0 km square [CAPPED]
+asked 12 km /   660 m  ->  [WorldGen] lap 12.00 km, 423 m of climbing, terrain 10.0 km square [CAPPED]
+asked 25 km /   500 m  ->  [WorldGen] lap 25.00 km, 500 m of climbing, terrain 10.0 km square 
+asked 25 km /  1375 m  ->  [WorldGen] lap 25.00 km, 882 m of climbing, terrain 10.0 km square [CAPPED]
+asked 32 km /  1760 m  ->  [WorldGen] lap 32.00 km, 1129 m of climbing, terrain 12.6 km square [CAPPED]
+asked 40 km /  2200 m  ->  [WorldGen] lap 40.00 km, 1411 m of climbing, terrain 15.5 km square [CAPPED]
+asked 40 km /   200 m  ->  [WorldGen] lap 40.00 km, 200 m of climbing, terrain 15.5 km square 

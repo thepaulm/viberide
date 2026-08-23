@@ -23,6 +23,12 @@ namespace KickrWorld
             public int seed;
             public float lapKm;
             public float ascentM;
+
+            // What was ASKED for, as opposed to what came out. Zero on anything
+            // saved before courses could be requested, which is the signal to
+            // load it the old way and get back exactly the course it had.
+            public float targetLapM;
+            public float targetClimbM;
             public string savedAt;
         }
 
@@ -81,7 +87,8 @@ namespace KickrWorld
 
         /// <summary>Save under this name, replacing any existing entry with the
         /// same name so re-saving a favourite updates it rather than duplicating.</summary>
-        public static bool Save(string name, int seed, float lapMetres, float ascentMetres)
+        public static bool Save(string name, int seed, float lapMetres, float ascentMetres,
+                                float targetLapM = 0f, float targetClimbM = 0f)
         {
             EnsureLoaded();
             name = Sanitise(name);
@@ -96,6 +103,8 @@ namespace KickrWorld
                 seed = seed,
                 lapKm = lapMetres / 1000f,
                 ascentM = ascentMetres,
+                targetLapM = targetLapM,
+                targetClimbM = targetClimbM,
                 savedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
             });
 
