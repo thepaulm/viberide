@@ -1,5 +1,7 @@
 # Releasing
 
+> Installed it and still seeing an older build? [mac/DEBUG_INSTALL.md](mac/DEBUG_INSTALL.md) walks through it on the Mac.
+
 A release takes two machines. Unity only runs on the Windows build host, and
 `pkgbuild` and `codesign` only exist on a Mac, so the zip is published from one
 and the `.pkg` people actually download is added from the other.
