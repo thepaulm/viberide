@@ -50,7 +50,9 @@ if [ -z "$TAG" ]; then
 fi
 VERSION="${TAG#v}"
 ZIPNAME="VibeRide-$VERSION-mac-universal.zip"
-PKGNAME="VibeRide-$VERSION.pkg"
+# See make_installer.sh: GitHub sorts release assets by name, and "-Installer"
+# puts this above the zip on the release page.
+PKGNAME="VibeRide-$VERSION-Installer.pkg"
 
 say "Release $TAG in $REPO"
 
@@ -94,11 +96,13 @@ SHA="$(unzip -p "$WORK/$ZIPNAME" VERSION.txt 2>/dev/null | awk '/^commit/{print 
 
 NOTES="$WORK/notes.md"
 cat > "$NOTES" <<EOF
-macOS universal build (Apple Silicon + Intel), built from ${SHA:-source}.
+## [Download $PKGNAME](https://github.com/$REPO/releases/download/$TAG/$PKGNAME)
 
-**Install:** download **$PKGNAME** and double-click it. It installs VibeRide to
+**Double-click it.** That is the whole install: VibeRide goes into
 /Applications, replacing any previous copy. Saved courses live in
 \`~/Library/Application Support/VibeRide\` and are never touched by an upgrade.
+
+macOS universal build (Apple Silicon + Intel), built from ${SHA:-source}.
 
 macOS blocks it the first time, because it is not signed with a paid Apple
 Developer ID. Open **System Settings > Privacy & Security**, find the message
@@ -116,9 +120,12 @@ a minute, with progress in the app's status panel. It uses a Python 3.9+ you
 already have, and only asks you to install one if it cannot find any. After that
 it starts in a couple of seconds.
 
-\`$ZIPNAME\` is the same build packaged the older way: unzip and double-click
-**Install VibeRide**. Either works; the .pkg is fewer steps. See START_HERE.md
-inside the zip for the long form.
+---
+
+<sub>\`$ZIPNAME\` is the same build packaged the older way: unzip and
+double-click **Install VibeRide**. Either works; the .pkg is fewer steps, and is
+what you want unless you have a reason. START_HERE.md inside the zip has the long
+form.</sub>
 EOF
 
 if [ "$DRYRUN" = 1 ]; then

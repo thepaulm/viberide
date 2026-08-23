@@ -22,8 +22,12 @@ git clone https://github.com/thepaulm/viberide.git    # if you have not already
 bash viberide/packaging/mac/make_installer.sh --zip VibeRide-0.8.3-mac-universal.zip
 ```
 
-That leaves `VibeRide-0.8.3.dmg` and `VibeRide-0.8.3.pkg` in the current
-directory. Pass `--dmg` or `--pkg` for just one.
+That leaves `VibeRide-0.8.3.dmg` and `VibeRide-0.8.3-Installer.pkg` in the
+current directory. Pass `--dmg` or `--pkg` for just one.
+
+The `-Installer` in the pkg name is load-bearing: GitHub lists release assets in
+alphabetical order, and it sorts the pkg above `-mac-universal.zip` so that a
+visitor sees the thing to double-click first.
 
 If you already have the repo checked out and an app somewhere:
 
@@ -158,7 +162,8 @@ tccutil reset Bluetooth com.viberide.app
 
 Both wrinkles the first run turned up have since been fixed on the Windows side:
 
-- `VERSION.txt` is now written with LF endings, so the `tr -d ''` in
+- `VERSION.txt` is now written with LF endings, so the `tr -d '
+'` in
   `make_installer.sh` is belt-and-braces rather than load-bearing.
 - The bundle carries the real version. `release.ps1` passes `-buildVersion` to
   Unity, so `CFBundleShortVersionString` matches the tag instead of always

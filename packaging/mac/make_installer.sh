@@ -131,7 +131,15 @@ fi
 # ---------------------------------------------------------------- .pkg
 if [ "$PKG" = 1 ]; then
     say "Building the installer package"
-    PKGOUT="$OUT/VibeRide-$VERSION.pkg"
+    # "-Installer" is not decoration. GitHub lists release assets in
+    # alphabetical order by filename, so this name decides what a visitor sees
+    # first: "-Installer" sorts ahead of "-mac-universal", putting the thing to
+    # double-click above the zip. Verified by renaming the asset on a published
+    # release -- the pkg had been uploaded second and moved to the top.
+    #
+    # Anything starting "mac" would lose: in "VibeRide-0.8.3-macOS-Installer",
+    # the "-" of "-mac-universal" sorts before the "O", and the zip wins again.
+    PKGOUT="$OUT/VibeRide-$VERSION-Installer.pkg"
     rm -f "$PKGOUT"
     # --root holds what lands in --install-location, so this installs
     # /Applications/VibeRide.app and replaces any bundle already there. The app

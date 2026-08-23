@@ -21,7 +21,7 @@ bash packaging/mac/release_pkg.sh v0.2.0   # or a specific tag
 ```
 
 That pulls the zip back off the release, signs the app properly, builds
-`VibeRide-0.2.0.pkg`, uploads it, and rewrites the release notes to lead with
+`VibeRide-0.2.0-Installer.pkg`, uploads it, and rewrites the release notes to lead with
 it. `--dry-run` does everything except the upload and leaves the pkg in the
 repo root for inspection.
 
