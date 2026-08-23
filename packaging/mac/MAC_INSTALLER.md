@@ -156,12 +156,14 @@ force the prompt deliberately:
 tccutil reset Bluetooth com.viberide.app
 ```
 
-Another, cosmetic: the app's own `Info.plist` still says
-`CFBundleShortVersionString = 1.0`, which is what Finder's Get Info shows. It
-does not affect the pkg — that is versioned from `VERSION.txt` — but
-`make_installer.sh --app` has nothing else to go on and will name its output
-`VibeRide-1.0.pkg`. Fixing it means setting the version in Unity's player
-settings.
+Both wrinkles the first run turned up have since been fixed on the Windows side:
+
+- `VERSION.txt` is now written with LF endings, so the `tr -d ''` in
+  `make_installer.sh` is belt-and-braces rather than load-bearing.
+- The bundle carries the real version. `release.ps1` passes `-buildVersion` to
+  Unity, so `CFBundleShortVersionString` matches the tag instead of always
+  saying 1.0 — which is what Finder's Get Info shows, and the only thing
+  `make_installer.sh --app` has to go on when naming its output.
 
 ## It works, and it is wired into releases
 

@@ -61,7 +61,14 @@ if (-not $SkipBuild) {
     $log = Join-Path $repo "unity-release.log"
     & $unity -batchmode -quit -projectPath $project `
         -executeMethod KickrWorld.EditorTools.PlayerBuilder.BuildAllMacFromCommandLine `
+        -buildVersion $Version `
         -logFile $log | Out-Null
+
+    # -buildVersion writes PlayerSettings.bundleVersion into ProjectSettings.asset,
+    # so the build dirties the tree it just insisted was clean -- and the next
+    # release would refuse to start. The built app already carries the version;
+    # the setting itself is not worth keeping.
+    git checkout -- (Join-Path $project "ProjectSettings/ProjectSettings.asset") 2>$null
 
     $result = Select-String -Path $log -Pattern "result=Succeeded" -Quiet
     if (-not $result) {
@@ -96,12 +103,22 @@ Copy-Item (Join-Path $PSScriptRoot "install.sh")        $stage
 Copy-Item (Join-Path $PSScriptRoot "START_HERE.md")     $stage
 
 # Stamp the build so a downloaded copy can be traced back to a commit.
-@"
-VibeRide $Version
-commit  $sha
-built   $(Get-Date -Format 'yyyy-MM-dd HH:mm')
-source  https://github.com/thepaulm/viberide
-"@ | Out-File -FilePath (Join-Path $stage "VERSION.txt") -Encoding ascii
+#
+# Written with explicit LF endings. Out-File on Windows PowerShell writes CRLF,
+# and this file ships inside a macOS package where something will eventually
+# parse it -- as the Mac-side installer build did, carrying a trailing carriage
+# return into every artifact name. That failure hides well: ls prints the name
+# looking correct while stat and cp both report no such file.
+$versionText = @(
+    "VibeRide $Version"
+    "commit  $sha"
+    "built   $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+    "source  https://github.com/thepaulm/viberide"
+) -join "`n"
+[System.IO.File]::WriteAllText(
+    (Join-Path $stage "VERSION.txt"),
+    $versionText + "`n",
+    (New-Object System.Text.ASCIIEncoding))
 
 Get-ChildItem $stage | ForEach-Object { Write-Host "    $($_.Name)" }
 

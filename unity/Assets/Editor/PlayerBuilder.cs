@@ -23,10 +23,35 @@ namespace KickrWorld.EditorTools
         [MenuItem("VibeRide/Build Windows Player")]
         public static void BuildWindows() => Build(BuildTarget.StandaloneWindows64, "Builds/Windows/VibeRide.exe");
 
+        /// <summary>
+        /// Version stamped into the bundle, from -buildVersion on the command
+        /// line. Left alone when absent, so an editor build keeps whatever the
+        /// project settings say.
+        ///
+        /// Without this the bundle always claimed 1.0: it is what Finder's Get
+        /// Info shows, and what any tool reading CFBundleShortVersionString off
+        /// the app has to go on -- which made the Mac-side installer build name
+        /// its output VibeRide-1.0.pkg whenever it was pointed at an app rather
+        /// than at a release zip.
+        /// </summary>
+        static void ApplyBuildVersion()
+        {
+            var args = System.Environment.GetCommandLineArgs();
+            int i = System.Array.IndexOf(args, "-buildVersion");
+            if (i < 0 || i + 1 >= args.Length) return;
+
+            string version = args[i + 1].Trim();
+            if (version.Length == 0) return;
+
+            PlayerSettings.bundleVersion = version;
+            Debug.Log($"[PlayerBuilder] version set to {version}");
+        }
+
         static void ConfigurePlayer()
         {
             PlayerSettings.companyName = "VibeRide";
             PlayerSettings.productName = "VibeRide";
+            ApplyBuildVersion();
             PlayerSettings.SetApplicationIdentifier(
                 NamedBuildTarget.Standalone, "com.viberide.app");
 
