@@ -175,11 +175,12 @@ also fixed.
 
 ## Still to fix
 
-- **The `~/Applications` fallback in the zip installer.** An install can still
-  succeed somewhere other than where it was asked to go, and say so only in a
-  dialog that is easy to dismiss. The fallback should ask rather than guess.
-  Turning off `BundleIsRelocatable` stopped the `.pkg` from being dragged into
-  that directory, but did nothing about the script that creates it.
+- ~~**The `~/Applications` fallback in the zip installer.**~~ Fixed in v0.9.2:
+  it asks now rather than guessing, and refuses outright when it cannot ask,
+  instead of quietly installing somewhere else. It also names any copy left in
+  the other location in its completion dialog, since that copy is what the Dock
+  or Spotlight may still be opening. The interactive prompt could not be tested
+  from the Windows side -- no pty -- so the terminal path is worth one run.
 
 - **`VERSION` is still below 1.0.** Harmless now that nothing compares versions
   at install time, but a bundle claiming `1.0` next to releases numbered `0.9.x`

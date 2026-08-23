@@ -82,10 +82,38 @@ die() { alert "VibeRide installer failed" "$1" stop; exit 1; }
 [ -n "$APP" ] || die "This installer is damaged -- it has no copy of VibeRide.app inside it. Download the zip again."
 
 # --- where it goes -----------------------------------------------------------
-# /Applications is writable by admin users without sudo. Where it is not, use
-# the per-user one rather than asking for a password.
+# /Applications is writable by admin users without sudo. Where it is not, ASK.
+#
+# This used to fall back to ~/Applications silently, and that is a trap: the
+# install succeeds somewhere other than where the rider then goes looking, and
+# says so only in a dialog that is easy to dismiss. It also leaves two copies on
+# the machine, which is its own long afternoon -- the Dock, Spotlight and a
+# double-click can each land on a different one.
 DEST="/Applications"
-[ -w "$DEST" ] || { DEST="$HOME/Applications"; mkdir -p "$DEST"; }
+if [ ! -w "$DEST" ]; then
+    HOMEAPPS="$HOME/Applications"
+    if [ "$GUI" = 1 ]; then
+        PICK="$(osascript -e "display dialog \"/Applications is not writable by this account.
+
+Install to your personal Applications folder instead? VibeRide will then only appear for you.\" with title \"VibeRide installer\" buttons {\"Cancel\", \"Use my folder\"} default button 2" 2>/dev/null)" || PICK=""
+        case "$PICK" in
+            *"Use my folder"*) DEST="$HOMEAPPS"; mkdir -p "$DEST" ;;
+            *) exit 1 ;;
+        esac
+    elif [ -t 0 ]; then
+        printf '
+/Applications is not writable by this account.
+'
+        printf 'Install to %s instead? [y/N] ' "$HOMEAPPS"
+        read -r reply
+        case "$reply" in
+            [yY]*) DEST="$HOMEAPPS"; mkdir -p "$DEST" ;;
+            *) echo "Nothing installed."; exit 1 ;;
+        esac
+    else
+        die "/Applications is not writable by this account, and there is no way to ask here. Run this from a terminal, or from an account that can write to /Applications."
+    fi
+fi
 # $APP is now an absolute path to the payload, so the destination has to be
 # built from the bundle NAME, not from $APP.
 TARGET="$DEST/$(basename "$APP")"
@@ -131,6 +159,16 @@ else
     SIGNED="no"
 fi
 
+# A copy in the other location outlives this install and may be what actually
+# gets launched, so say so rather than leaving it to be discovered.
+OTHER=""
+for cand in /Applications/VibeRide.app "$HOME/Applications/VibeRide.app"; do
+    [ "$cand" = "$TARGET" ] && continue
+    [ -d "$cand" ] && OTHER="
+
+There is another copy at $cand. It is now out of date, and the Dock or Spotlight may still open it. Drag it to the Trash."
+done
+
 NOTE=""
 [ "$SIGNED" = "yes" ] || NOTE="
 
@@ -154,7 +192,7 @@ $FIRST_RUN
 
 Wake the trainer by spinning the cranks, and make sure nothing else holds it -- Zwift, the Wahoo phone app or a head unit will take the one connection a trainer allows.
 
-macOS will ask for Bluetooth permission on the first scan. Allow it, or the trainer is never found.$NOTE"
+macOS will ask for Bluetooth permission on the first scan. Allow it, or the trainer is never found.$OTHER$NOTE"
 
 # Already installed by this point; a failure to bring it to the front is not a
 # failed install and must not be reported as one.
