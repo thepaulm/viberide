@@ -4,14 +4,43 @@ A release takes two machines. Unity only runs on the Windows build host, and
 `pkgbuild` and `codesign` only exist on a Mac, so the zip is published from one
 and the `.pkg` people actually download is added from the other.
 
+## 0. Bump the version
+
+The version lives in the `VERSION` file at the repo root. **Bump it as part of
+any change worth releasing**, in the same commit, so the diff records what the
+change is going to ship as.
+
+```
+0.9.0  ->  0.10.0
+```
+
+It used to be nothing but an argument to the release script, which meant the
+repository held no record of what had shipped. Five commits once accumulated
+behind a published tag with nothing to notice - the work was pushed, the release
+was not, and the mismatch surfaced only when the Mac half went to build a pkg
+from a tag that predated the feature being looked for.
+
+`release.ps1` now refuses to publish a version that already has a tag, before
+spending a build on it:
+
+```
+v0.9.0 is already published. Bump VERSION for a new release, or pass -Replace
+to overwrite this one.
+```
+
+`-Replace` exists for rebuilding the same version deliberately. It used to be
+the silent default, which is how a release can look updated while its tag still
+points at an older commit.
+
 ## 1. Windows: build and publish the zip
 
 ```powershell
-powershell -File packaging\mac\release.ps1 -Version 0.2.0
+powershell -File packaging\mac\release.ps1
 ```
 
-That builds the macOS player, stages the package, zips it, and attaches it to a
-GitHub Release tagged `v0.2.0`, with notes describing the zip.
+That reads `VERSION`, builds the macOS player, stages the package, zips it, and
+attaches it to a GitHub Release tagged `v<version>`, with notes describing the
+zip. `-Version 0.2.0` still overrides the file if you need it to.
 
 ## 2. Mac: add the .pkg
 
