@@ -659,6 +659,15 @@ Three things to know:
 | `Install VibeRide.command` | double-clickable installer: replace, unquarantine, re-sign, open |
 | `START_HERE.md` | the instructions that go in the zip |
 | `makezip.py` | builds the zip with forward-slash names **and Unix file modes** |
+| `make_installer.sh` | run **on a Mac**: signs the app, builds a `.dmg` and `.pkg` |
+| `MAC_INSTALLER.md` | what those are for, and how to use them |
+
+The last two are the only things here that need a Mac. Everything else in the
+release runs on the Windows build host. See
+[MAC_INSTALLER.md](packaging/mac/MAC_INSTALLER.md) — the short of it is that
+signing the app on a Mac means shipping a correct bundle rather than repairing
+one at install time, and that a locally built artifact is not quarantined, so it
+opens without a Gatekeeper detour on the machine that made it.
 
 ### Why there is no setup step any more
 

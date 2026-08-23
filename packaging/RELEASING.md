@@ -1,5 +1,9 @@
 # Releasing
 
+> Building a `.dmg` or `.pkg` needs a Mac; see
+> [mac/MAC_INSTALLER.md](mac/MAC_INSTALLER.md). Everything below runs on the
+> Windows build host and produces the zip.
+
 One command, from a clean tree to a published binary:
 
 ```powershell
