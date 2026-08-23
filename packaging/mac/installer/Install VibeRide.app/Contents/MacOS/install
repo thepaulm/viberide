@@ -132,9 +132,20 @@ NOTE=""
 
 Note: could not re-sign the app, so the Bluetooth permission may not stick. Installing the Xcode command line tools (xcode-select --install) and running this again will fix that."
 
+# Only promise a wait when there is going to be one. The environment lives in
+# Application Support and survives being reinstalled over, so on every upgrade
+# after the first the app starts immediately -- and saying otherwise reads as a
+# regression, as though the work were being redone each time.
+ENV_PY="$HOME/Library/Application Support/VibeRide/bridge/.venv/bin/python"
+if [ -x "$ENV_PY" ]; then
+    FIRST_RUN="Its Python environment is already set up from last time, so it will start straight away. Your saved courses are untouched."
+else
+    FIRST_RUN="The first launch takes about a minute while it builds the Python environment the trainer bridge needs. The status panel in the app shows the progress. It uses a Python you already have, if there is a suitable one."
+fi
+
 alert "VibeRide installed" "Installed to $TARGET, and opening it now.
 
-The first launch takes about a minute while it builds the Python environment the trainer bridge needs. The status panel in the app shows the progress.
+$FIRST_RUN
 
 Wake the trainer by spinning the cranks, and make sure nothing else holds it -- Zwift, the Wahoo phone app or a head unit will take the one connection a trainer allows.
 
