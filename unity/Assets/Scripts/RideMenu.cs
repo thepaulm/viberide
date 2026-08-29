@@ -310,12 +310,15 @@ namespace KickrWorld
             GUI.Label(new Rect(px + pad, y, w, 40f),
                       $"Distance      {Units.DistanceText(_genLapM)}", _bigLabel);
             y += 48f;
-            // Half-kilometre steps: without snapping, the number jitters by tens
-            // of metres as the mouse moves.
-            _genLapM = Mathf.Round(
-                GUI.HorizontalSlider(new Rect(px + pad, y, w, 34f),
-                                     _genLapM, MinLapM, MaxLapM,
-                                     _bigSlider, _bigThumb) / 500f) * 500f;
+            // Snapped, because without it the number jitters by tens of metres
+            // as the mouse moves -- and snapped in display units, so the steps
+            // land on round numbers whichever unit is switched on.
+            _genLapM = Mathf.Clamp(
+                Units.SnapDistance(
+                    GUI.HorizontalSlider(new Rect(px + pad, y, w, 34f),
+                                         _genLapM, MinLapM, MaxLapM,
+                                         _bigSlider, _bigThumb)),
+                MinLapM, MaxLapM);
             y += 70f;
 
             // The ceiling moves with the distance, so shortening the lap under a
@@ -326,15 +329,17 @@ namespace KickrWorld
             GUI.Label(new Rect(px + pad, y, w, 40f),
                       $"Climbing      {Units.ElevationText(_genClimbM)}", _bigLabel);
             y += 48f;
-            _genClimbM = Mathf.Round(
-                GUI.HorizontalSlider(new Rect(px + pad, y, w, 34f),
-                                     _genClimbM, lo, hi,
-                                     _bigSlider, _bigThumb) / 25f) * 25f;
+            _genClimbM = Mathf.Clamp(
+                Units.SnapElevation(
+                    GUI.HorizontalSlider(new Rect(px + pad, y, w, 34f),
+                                         _genClimbM, lo, hi,
+                                         _bigSlider, _bigThumb)),
+                lo, hi);
             y += 64f;
 
             GUI.Label(new Rect(px + pad, y, w, 28f),
                       $"{Character(_genLapM, _genClimbM)}  ·  roughly " +
-                      $"{Mathf.RoundToInt(_genClimbM / Mathf.Max(0.1f, _genLapM / 1000f))} m per km  ·  approximate",
+                      $"{Units.ClimbRateText(_genClimbM, _genLapM)}  ·  approximate",
                       _bigHint);
             y += 48f;
 

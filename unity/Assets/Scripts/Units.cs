@@ -65,5 +65,26 @@ namespace KickrWorld
 
         public static string DistanceText(float metres) =>
             $"{Distance(metres):F2}{DistanceSuffix}";
+
+        /// <summary>How steep a course is overall -- the number riders actually
+        /// compare routes by. Metres per kilometre and feet per mile are both
+        /// idiomatic; neither audience reads the other one.</summary>
+        public static string ClimbRateText(float climbM, float lengthM)
+        {
+            float perKm = climbM / Mathf.Max(0.1f, lengthM / 1000f);
+            return Imperial ? $"{perKm * 5.27999f:F0} ft per mile"
+                            : $"{perKm:F0} m per km";
+        }
+
+        /// <summary>Round a value to something that reads cleanly in whichever
+        /// unit is on screen. Snapping in metres means an imperial rider drags
+        /// through 15.53, 15.84, 16.16 and can never land on a whole mile.</summary>
+        public static float SnapDistance(float metres) =>
+            Imperial ? Mathf.Round(metres / (0.25f * 1609.344f)) * (0.25f * 1609.344f)
+                     : Mathf.Round(metres / 500f) * 500f;
+
+        public static float SnapElevation(float metres) =>
+            Imperial ? Mathf.Round(metres / (100f / 3.280840f)) * (100f / 3.280840f)
+                     : Mathf.Round(metres / 25f) * 25f;
     }
 }
