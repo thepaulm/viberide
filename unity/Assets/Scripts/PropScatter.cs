@@ -247,6 +247,9 @@ namespace KickrWorld
             }
 
             Placed = placed;
+            Debug.Log($"[PropScatter] animation: {_animated} playing, " +
+                      $"{_noComponent} without an Animation component, {_noIdle} without an idle clip");
+            _animated = _noComponent = _noIdle = 0;
             Debug.Log($"[PropScatter] placed {placed} objects across {Kinds.Count} kinds (seed {seed})");
         }
 
@@ -312,6 +315,7 @@ namespace KickrWorld
                 : Quaternion.Euler(0f, yaw, 0f);
 
             go.transform.localScale = template.transform.localScale * s;
+            Animate(go, rng);
             return true;
         }
 
@@ -320,6 +324,94 @@ namespace KickrWorld
         /// An imported FBX usually keeps its meshes on child transforms, so the
         /// root has no renderer of its own to measure.
         /// </summary>
+        /// <summary>
+        /// Set a scattered prop breathing, if it brought an animation with it.
+        ///
+        /// The dinosaurs ship six clips each -- idle, walk, run, attack, jump,
+        /// death -- and only idle is any use here. A walk cycle on something that
+        /// stays put reads as a treadmill, and the one-shot clips freeze on their
+        /// last frame once played.
+        ///
+        /// Every instance gets its own phase and a slightly different speed. A
+        /// herd sharing one clip without that is instantly wrong: several tonnes
+        /// of animal blinking in perfect unison reads as a screensaver rather
+        /// than as wildlife.
+        /// </summary>
+        static int _animated, _noComponent, _noIdle;
+
+        // One sample instance, kept only so -animdebug can watch whether its
+        // clip time actually advances. Pixel diffing could not answer that:
+        // a subtle idle and a stopped one look identical in two screenshots.
+        static Animation _probeAnim;
+        static string _probeClip;
+
+        float _nextProbe;
+
+        /// <summary>
+        /// -animdebug reports whether the sample clip is actually advancing.
+        ///
+        /// Worth keeping: an idle clip moves a head and a ribcage, so comparing
+        /// two screenshots cannot tell a subtle animation from a stopped one --
+        /// several rounds of pixel differencing here concluded "not animating"
+        /// about something that was, and one line of clip time settled it.
+        /// </summary>
+        void Update()
+        {
+            if (_probeAnim == null) return;
+            if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(), "-animdebug") < 0) return;
+            if (Time.time < _nextProbe) return;
+            _nextProbe = Time.time + 1f;
+
+            var st = _probeAnim[_probeClip];
+            Debug.Log($"[PropScatter] probe t={Time.time:F1} clipTime={st.time:F2} " +
+                      $"normalized={st.normalizedTime:F2} isPlaying={_probeAnim.isPlaying} " +
+                      $"weight={st.weight:F2}");
+        }
+
+        static void Animate(GameObject go, System.Random rng)
+        {
+            var anim = go.GetComponentInChildren<Animation>(true);
+            if (anim == null) { _noComponent++; return; }
+
+            AnimationClip idle = null;
+            foreach (AnimationState state in anim)
+            {
+                if (state.clip == null) continue;
+                if (state.name.IndexOf("idle", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    idle = state.clip;
+                    break;
+                }
+            }
+            if (idle == null) { _noIdle++; return; }
+
+            anim.clip = idle;
+            anim.wrapMode = WrapMode.Loop;
+            // Skinned meshes are the expensive part of this world, and there are
+            // dozens of them. Unity will skip the sampling entirely for any whose
+            // renderers are off screen, which costs nothing to ask for.
+            anim.cullingType = AnimationCullingType.BasedOnRenderers;
+
+            anim.Play(idle.name);
+            var playing = anim[idle.name];
+            playing.wrapMode = WrapMode.Loop;
+            playing.speed = 0.85f + (float)rng.NextDouble() * 0.3f;
+            // Start each one somewhere different in the cycle.
+            playing.time = (float)rng.NextDouble() * idle.length;
+            _animated++;
+
+            if (_probeAnim == null)
+            {
+                _probeAnim = anim;
+                _probeClip = idle.name;
+                Debug.Log($"[PropScatter] probe: {go.name} clip '{idle.name}' " +
+                          $"legacy={idle.legacy} length={idle.length:F2} " +
+                          $"speed={playing.speed:F2} enabled={playing.enabled} " +
+                          $"weight={playing.weight:F2} isPlaying={anim.isPlaying} " +
+                          $"componentEnabled={anim.enabled}");
+            }
+        }
+
         static Bounds LocalBounds(GameObject go)
         {
             var filters = go.GetComponentsInChildren<MeshFilter>(true);
