@@ -202,7 +202,8 @@ namespace KickrWorld
             }
 
             Debug.Log($"[WorldGen] lap {arc / 1000f:F2} km, {profile.TotalAscent:F0} m of climbing, " +
-                      $"terrain {s.TerrainSize / 1000f:F1} km square");
+                      $"terrain {s.TerrainSize / 1000f:F1} km square, " +
+                      $"{s.TerrainSize / (s.HeightmapResolution - 1):F1} m per texel");
 
             return new RoutePath(loop, profile, s.BaseElevation);
         }

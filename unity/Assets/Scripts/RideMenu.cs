@@ -243,7 +243,14 @@ namespace KickrWorld
         // past roughly this the 2049-sample heightmap is stretched far enough
         // that the ground starts to look smoothed.
         const float MinLapM = 8000f;
-        const float MaxLapM = 40000f;
+        // 60 miles. The loop grows the map to fit rather than costing memory --
+        // the heightmap stays at 2049 samples either way -- so the price of a lap
+        // this long is texel size: 4.9 m on a default world, 17.6 m here. That
+        // shows up as gentler ground near the road with the relief pushed out to
+        // the horizon, which still reads as open country. It is not free past
+        // this point: keep going and the texel approaches the width of the road's
+        // own bench, and then the road stops being able to sit flat.
+        const float MaxLapM = 96600f;
 
         // Climbing is expressed per kilometre because that is what bounds it, and
         // 34 is measured rather than reasoned. Gradients are already near the 13%
