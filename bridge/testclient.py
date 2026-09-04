@@ -8,7 +8,7 @@ from websockets.asyncio.client import connect
 
 
 async def main():
-    url = sys.argv[1] if len(sys.argv) > 1 else "ws://127.0.0.1:8765"
+    url = sys.argv[1] if len(sys.argv) > 1 else "ws://127.0.0.1:47812"
     async with connect(url) as ws:
         print(f"connected to {url}\n")
         print(f"{'t':>6} {'grade':>7} {'power':>7} {'cad':>6} {'speed':>8} {'dist':>9} {'climb':>7}")

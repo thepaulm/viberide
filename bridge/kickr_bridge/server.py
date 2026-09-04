@@ -28,6 +28,8 @@ import logging
 import math
 import time
 
+from http import HTTPStatus
+
 from websockets.asyncio.server import serve
 
 from . import ftms, physics, procwatch
@@ -37,6 +39,25 @@ log = logging.getLogger(__name__)
 
 PHYSICS_HZ = 60.0
 BROADCAST_HZ = 30.0
+
+# Not 8765: that is the port every WebSocket tutorial uses, so unrelated local
+# servers land on it too. Must match TrainerLink.DefaultPort in Unity.
+DEFAULT_PORT = 47812
+
+# Answer to any plain HTTP request. The app's launcher sends one before
+# deferring to a listener on our port, to tell a bridge from a stranger.
+# Must match BridgeLauncher.HealthBody in Unity.
+HEALTH_BODY = "viberide-bridge"
+
+
+def answer_health(connection, request):
+    """Reply to non-WebSocket requests so a probe can identify us.
+
+    Returning None lets a real WebSocket handshake proceed as normal.
+    """
+    if request.headers.get("Upgrade", "").lower() == "websocket":
+        return None
+    return connection.respond(HTTPStatus.OK, HEALTH_BODY + "\n")
 
 
 class Bridge:
@@ -293,7 +314,7 @@ def install_signal_handlers(stop: asyncio.Event):
 async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--match", default="KICKR", help="trainer name/address substring")
     parser.add_argument("--demo", action="store_true", help="fake a rider, no hardware")
     parser.add_argument("--rider-kg", type=float, default=75.0)
@@ -338,7 +359,9 @@ async def main():
         tasks.append(asyncio.create_task(procwatch.watch_stdin(bridge.stop)))
 
     try:
-        async with serve(bridge.handle_client, args.host, args.port):
+        async with serve(
+            bridge.handle_client, args.host, args.port, process_request=answer_health
+        ):
             log.info("Bridge listening on ws://%s:%d", args.host, args.port)
             await bridge.stop.wait()
             log.info("Shutting down.")

@@ -87,7 +87,7 @@ name the `bridge` folder rather than the parent.
 ## How it fits together
 
 ```
-   KICKR  --BLE-->  bridge (Python)  --ws://127.0.0.1:8765-->  VibeRide.app
+   KICKR  --BLE-->  bridge (Python)  --ws://127.0.0.1:47812-->  VibeRide.app
           <-grade--                  <-----terrain grade------
 ```
 

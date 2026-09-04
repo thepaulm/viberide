@@ -40,6 +40,15 @@ which is what makes the flywheel physically harder on a climb.
 app is all you have to do. If a bridge is already listening it defers to that one
 instead, which keeps a hand-started debugging session from being fought over.
 
+"Already listening" is checked, not assumed. The launcher sends a plain HTTP GET
+to the port and only defers if the reply is the bridge's `viberide-bridge` health
+body; anything else is reported on the HUD as a foreign program holding the port.
+It used to test only whether the port accepted a connection, and an unrelated
+dashboard server on the same port passed for a bridge -- the app then sat forever
+failing to open a WebSocket to it, and a fresh install changed nothing. The port
+is 47812 for the same reason: the old 8765 is the one every WebSocket tutorial
+uses, so other local projects pick it too.
+
 Shutdown is layered, because an orphaned bridge keeps the trainer's single BLE
 connection and blocks the next launch:
 

@@ -114,12 +114,36 @@ def test_port_conflict():
             first.kill()
 
 
+def test_health_probe():
+    """The app's launcher tells a bridge from a stranger on its port with a plain
+    HTTP GET. Mirror that probe exactly, raw bytes and all."""
+    print("plain HTTP GET identifies the bridge")
+    p = spawn(["--watch-stdin"])
+    try:
+        if not wait_listening(PORT):
+            return check("came up", False)
+        with socket.create_connection(("127.0.0.1", PORT), timeout=2) as s:
+            s.sendall(f"GET /health HTTP/1.1\r\nHost: 127.0.0.1:{PORT}\r\nConnection: close\r\n\r\n".encode())
+            reply = b""
+            while b"viberide-bridge" not in reply:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                reply += chunk
+        ok = reply.startswith(b"HTTP/1.1 200") and b"viberide-bridge" in reply
+        return check("answers 200 viberide-bridge", ok, reply.split(b"\r\n")[0].decode(errors="replace"))
+    finally:
+        if p.poll() is None:
+            p.kill()
+
+
 if __name__ == "__main__":
     results = [
         test_stdin_shutdown(),
         test_stdin_eof(),
         test_parent_watchdog(),
         test_port_conflict(),
+        test_health_probe(),
     ]
     print("\nPASS" if all(results) else "\nFAILURES ABOVE")
     sys.exit(0 if all(results) else 1)

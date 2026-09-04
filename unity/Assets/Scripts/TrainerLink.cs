@@ -43,8 +43,13 @@ namespace KickrWorld
     /// </summary>
     public class TrainerLink : MonoBehaviour
     {
+        /// <summary>The bridge's port. Deliberately not 8765 -- that is the
+        /// port every WebSocket tutorial uses, so unrelated local servers land
+        /// on it too and the launcher mistook one for a running bridge.</summary>
+        public const int DefaultPort = 47812;
+
         [Header("Connection")]
-        public string Url = "ws://127.0.0.1:8765";
+        public string Url = "ws://127.0.0.1:" + DefaultPort;
         public bool AutoConnect = true;
         public float ReconnectSeconds = 3f;
 

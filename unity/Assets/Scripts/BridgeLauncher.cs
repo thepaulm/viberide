@@ -25,6 +25,10 @@ namespace KickrWorld
     ///
     /// If a bridge is already listening (you started one by hand) this defers to
     /// it and starts nothing, so a manual debugging session isn't fought over.
+    /// "Already listening" means it answered the bridge's health check, not just
+    /// that the port accepted a connection: an unrelated local server on the same
+    /// port once passed for a bridge, and the app then sat forever failing to
+    /// open a WebSocket to it.
     /// </summary>
     public class BridgeLauncher : MonoBehaviour
     {
@@ -308,8 +312,16 @@ namespace KickrWorld
             return null;
         }
 
-        /// <summary>Is something already serving on the bridge port?</summary>
-        public static bool PortInUse(int port)
+        public enum PortState { Free, Bridge, Foreign }
+
+        /// <summary>What the bridge answers a plain HTTP GET with. Must match
+        /// HEALTH_BODY in kickr_bridge/server.py.</summary>
+        public const string HealthBody = "viberide-bridge";
+
+        /// <summary>Is something already serving on the bridge port, and is it
+        /// ours? Sends a plain HTTP GET; the bridge answers every non-WebSocket
+        /// request with <see cref="HealthBody"/>, anything else is a stranger.</summary>
+        public static PortState ProbePort(int port)
         {
             try
             {
@@ -318,12 +330,36 @@ namespace KickrWorld
                 // Short: this runs on the main thread, and a loopback connect
                 // either succeeds immediately or is not going to.
                 bool open = result.AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(120));
-                if (open) probe.EndConnect(result);
-                return open;
+                if (!open) return PortState.Free;
+                probe.EndConnect(result);
+
+                probe.ReceiveTimeout = 300;
+                probe.SendTimeout = 300;
+                var stream = probe.GetStream();
+                var request = System.Text.Encoding.ASCII.GetBytes(
+                    $"GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+                stream.Write(request, 0, request.Length);
+
+                var buffer = new byte[4096];
+                int total = 0;
+                try
+                {
+                    while (total < buffer.Length)
+                    {
+                        int n = stream.Read(buffer, total, buffer.Length - total);
+                        if (n <= 0) break;
+                        total += n;
+                        if (System.Text.Encoding.ASCII.GetString(buffer, 0, total).Contains(HealthBody)) break;
+                    }
+                }
+                catch (IOException) { }   // timeout: whatever it is, it did not answer like a bridge
+
+                string reply = System.Text.Encoding.ASCII.GetString(buffer, 0, total);
+                return reply.Contains(HealthBody) ? PortState.Bridge : PortState.Foreign;
             }
             catch
             {
-                return false;
+                return PortState.Free;
             }
         }
 
@@ -331,13 +367,21 @@ namespace KickrWorld
 
         public void Launch()
         {
-            int port = ParsePort(Link != null ? Link.Url : "ws://127.0.0.1:8765");
+            int port = ParsePort(Link != null ? Link.Url : null);
 
-            if (PortInUse(port))
+            switch (ProbePort(port))
             {
-                Status = $"using bridge already running on :{port}";
-                Debug.Log($"[BridgeLauncher] {Status}");
-                return;
+                case PortState.Bridge:
+                    Status = $"using bridge already running on :{port}";
+                    Debug.Log($"[BridgeLauncher] {Status}");
+                    return;
+                case PortState.Foreign:
+                    // Starting our own would only fail with "address in use", and
+                    // the app would sit forever failing to open a WebSocket to
+                    // whatever this is. Say so on the one screen anyone watches.
+                    Status = $"port {port} is taken by another program (not the bridge) -- quit it, then relaunch";
+                    Debug.LogError($"[BridgeLauncher] {Status}");
+                    return;
             }
 
             string bridgeDir = ResolveBridgeDirectory(out bool needsSetup);
@@ -361,7 +405,7 @@ namespace KickrWorld
 
         void StartBridge(string bridgeDir)
         {
-            int port = ParsePort(Link != null ? Link.Url : "ws://127.0.0.1:8765");
+            int port = ParsePort(Link != null ? Link.Url : null);
             string python = FindPython(bridgeDir);
             if (python == null)
             {
@@ -415,7 +459,7 @@ namespace KickrWorld
 
         static int ParsePort(string url)
         {
-            try { return new Uri(url).Port; } catch { return 8765; }
+            try { return new Uri(url).Port; } catch { return TrainerLink.DefaultPort; }
         }
 
         static bool SafeHasExited(Process p)
