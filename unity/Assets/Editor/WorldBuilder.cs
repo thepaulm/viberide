@@ -79,7 +79,7 @@ namespace KickrWorld.EditorTools
             // which would otherwise describe a landscape about to change.
             Log("Planning lakes...");
             var lakes = LakeGen.Plan(settings, route, heights);
-            LakeGen.Carve(settings, heights, lakes);
+            LakeGen.Carve(settings, heights, lakes, route);
 
             LogHeightStats(heights, settings);
             LogRoadGrade(route);

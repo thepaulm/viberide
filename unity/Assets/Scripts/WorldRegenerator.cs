@@ -154,7 +154,7 @@ namespace KickrWorld
             Stage = "Filling lakes";
             yield return null;
             var lakes = LakeGen.Plan(settings, route, builder.Heights);
-            LakeGen.Carve(settings, builder.Heights, lakes);
+            LakeGen.Carve(settings, builder.Heights, lakes, route);
 
             Stage = "Applying terrain";
             yield return null;

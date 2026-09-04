@@ -24,6 +24,15 @@ namespace KickrWorld
         public float WaterLevel;
         public float Depth;
         public float RoadDistance;
+        /// <summary>Unit vector from the centre toward the road, so the carve can
+        /// tell the near shore from the far one. The two are not alike: the far
+        /// shore runs up a mountain, the near one has to be walked down by eye.</summary>
+        public Vector2 RoadDir;
+        /// <summary>Centre to road centreline. With RoadDir this is everything the
+        /// carve needs to know about where the rider will be standing.</summary>
+        public float RoadGap;
+        /// <summary>Road surface height beside the lake.</summary>
+        public float RoadY;
         public float RouteDistance;
         /// <summary>How much the road rose or fell over the length of the lake.
         /// The number that decides whether a lake can go here at all.</summary>
@@ -59,14 +68,43 @@ namespace KickrWorld
         /// <summary>How far the wobbled shoreline can exceed the plain ellipse.</summary>
         public const float ShapeBulge = 1.22f;
 
+        /// <summary>Multipliers on the standoff from the road, nearest first.</summary>
+        static readonly float[] OffsetLadder = { 1f, 1.4f, 1.9f };
+
         /// <summary>Half-lengths tried at each stretch, largest first.</summary>
         static readonly float[] HalfLengths = { 170f, 130f, 95f };
 
         /// <summary>Width as a fraction of length. Lakes beside roads are long.</summary>
         const float WidthRatio = 0.42f;
 
-        /// <summary>Band outside the water where the carve returns to real ground.</summary>
-        const float ShoreBand = 22f;
+        /// <summary>Band outside the water where the carve returns to real ground.
+        ///
+        /// 22 m was too short to be a shore. Where a lake met rising ground the
+        /// carve had to give back the whole height difference inside it, and a
+        /// measured 200 m cut across 22 m is not a bank, it is a quarry face --
+        /// which is exactly what these lakes looked like from the road.</summary>
+        const float ShoreBand = 60f;
+
+        /// <summary>
+        /// How close to the road the near shore is graded.
+        ///
+        /// This is the A in A(E+D)/E, and it is the whole reason lakes were
+        /// invisible: the corridor holds its bench flat at road level for about
+        /// 40 m, and from an eye 2 m up that lip casts a shadow 248 m long over
+        /// water 29 m below. No lake fits beyond that and still reads as being
+        /// beside the road. So on the side facing the road the bench is cut back
+        /// to the edge of the tarmac and the ground falls from there to the
+        /// water, which drops the shadow to a few tens of metres.
+        /// </summary>
+        const float RoadEdge = 9f;
+
+        /// <summary>Eye height above the road, for the sightline arithmetic.</summary>
+        const float EyeHeight = 2f;
+
+        /// <summary>How far above the waterline the surrounding ground may stand.
+        /// Beyond this the lake is in a hole, and the carve is cutting a cliff to
+        /// put it there.</summary>
+        const float MaxShoreRise = 55f;
 
         /// <summary>Bank thrown up just outside the waterline.</summary>
         const float BankHeight = 3f;
@@ -119,8 +157,16 @@ namespace KickrWorld
         // something glimpsed at the bottom of a ravine.
         // At least 18 m down, so the lake sits on the shelf rather than in the
         // strip beside the road, and no more than 70 so it stays part of the ride.
-        const float MinBelowRoad = 5f;
-        const float MaxBelowRoad = 40f;
+        // Narrowed from 5..40. The ceiling is not a taste question: with the
+        // near shore about 90 m out and the bench cut back to RoadEdge, the
+        // shadow A(E+D)/E stays clear of the water only while D is under about
+        // 20 m. A deeper lake is a better lake right up until it disappears.
+        const float MinBelowRoad = 8f;
+        // 14, not 20, and the number is forced rather than chosen: the near shore
+        // lands about 80 m out, and RoadEdge(E + D)/E reaches 72 m at D = 14 and
+        // 99 m at D = 20. Twenty metres of drop puts the water back behind the
+        // shoulder, which is where it has been all along.
+        const float MaxBelowRoad = 14f;
 
         /// <summary>
         /// Deepest the carve may cut into natural ground.
@@ -130,6 +176,10 @@ namespace KickrWorld
         /// rock was in the way -- only at whether the rim fell away afterwards.
         /// </summary>
         const float MaxCut = 22f;
+
+        /// <summary>How far the natural floor may sit below the water surface
+        /// before the lake is a sheet hung over a hole rather than a lake.</summary>
+        const float MaxUnderfill = 26f;
 
         /// <summary>
         /// Shoreline radius at a world bearing: an ellipse along the road, pushed
@@ -154,10 +204,16 @@ namespace KickrWorld
             Mathf.Max(lake.HalfLength, lake.HalfWidth) * ShapeBulge + ShoreBand;
 
         public static List<LakeSite> Plan(WorldSettings s, RoutePath route,
-                                          float[,] heights, int wanted = 2)
+                                          float[,] heights, int wanted = 0)
         {
             var found = new List<LakeSite>();
             if (route == null || heights == null) return found;
+
+            // One lake every dozen kilometres or so. Two was a fixed count from
+            // when every course was 25 km; on a 60 mile lap it meant riding an
+            // hour between them, which is indistinguishable from having none.
+            if (wanted <= 0)
+                wanted = Mathf.Clamp(Mathf.RoundToInt(route.Length / 12000f), 2, 6);
 
             int res = s.HeightmapResolution;
             float texel = s.TerrainSize / (res - 1);
@@ -169,7 +225,7 @@ namespace KickrWorld
             // when the answer came back "no lakes at all" it was the only way to
             // find out which of five constraints had closed the door.
             int rBounds = 0, rOverlap = 0, rRoad = 0, rBasin = 0,
-                rDrop = 0, rCut = 0, rHolds = 0, rView = 0;
+                rDrop = 0, rCut = 0, rHolds = 0, rView = 0, rShadow = 0, rWall = 0, rDeep = 0;
 
             for (int i = 0; i < stations && found.Count < wanted; i++)
             {
@@ -195,10 +251,23 @@ namespace KickrWorld
                     // lip shadow was tried and measured worse: past the corridor
                     // the shelf fades, the ground comes back up, and the water
                     // ends up both further away and behind natural terrain.
-                    float offset = RoadClearance + halfWidth * ShapeBulge + ShoreBand;
+                    // Far enough out that the graded bank has somewhere to go:
+                    // the near shore wants to clear the RoadEdge shadow, and a
+                    // shore hard against the clearance leaves no slope to walk
+                    // the ground down, only a step.
+                    float baseOffset = RoadClearance + halfWidth * ShapeBulge + ShoreBand;
 
+                    // Standing the lake further out buys shadow clearance
+                    // directly -- the shoulder hides a fixed distance, so the
+                    // cure for being inside it is to be beyond it. Tried nearest
+                    // first so lakes stay part of the ride when they can.
+                    bool placedHere = false;
+                    foreach (float push in OffsetLadder)
+                    {
+                    if (placedHere) break;
                     for (int sign = -1; sign <= 1; sign += 2)
                     {
+                        float offset = baseOffset * push;
                         var centre = new Vector2(origin.x + side.x * offset * sign,
                                                  origin.z + side.z * offset * sign);
 
@@ -213,6 +282,9 @@ namespace KickrWorld
                             RoadDistance = offset,
                             RouteDistance = d,
                             RoadRelief = relief,
+                            RoadDir = new Vector2(-side.x * sign, -side.z * sign),
+                            RoadGap = offset,
+                            RoadY = roadY,
                         };
 
                         if (!InBounds(s, lake)) { rBounds++; continue; }
@@ -226,12 +298,14 @@ namespace KickrWorld
                         // Take the surface from the ground that is actually there,
                         // not from the road. Pegging it to the road and carving
                         // away whatever stood in the way is what produced the pit.
-                        if (!Basin(s, heights, res, texel, lake, out float median, out float high))
+                        if (!Basin(s, heights, res, texel, lake, out float median,
+                                   out float high, out float low))
                         { rBasin++; continue; }
                         // Straight from the ground that is there. The falling
                         // side of the corridor supplies the drop now, so there is
                         // nothing to force.
-                        lake.WaterLevel = Mathf.Min(median - 1f, roadY - 8f);
+                        lake.WaterLevel = Mathf.Clamp(Mathf.Min(median - 1f, roadY - MinBelowRoad),
+                                                      roadY - MaxBelowRoad, roadY - MinBelowRoad);
 
                         // The lake must lie in ground that is ALREADY low. Digging
                         // the drop rather than finding it is what produced a lake
@@ -241,6 +315,30 @@ namespace KickrWorld
                         float below = roadY - lake.WaterLevel;
                         if (below < MinBelowRoad || below > MaxBelowRoad) { rDrop++; continue; }
                         if (high - lake.WaterLevel > MaxCut) { rCut++; continue; }
+
+                        // ...and the floor must not fall away underneath it. The
+                        // surface is clamped into a band the rider can see into,
+                        // which means it no longer simply follows the ground --
+                        // so a basin that plunges below that band gets a flat
+                        // sheet of water hanging over a canyon.
+                        if (lake.WaterLevel - low > MaxUnderfill) { rDeep++; continue; }
+
+                        // The sightline test, stated once and arithmetically
+                        // rather than hoped for. Ground held at RoadEdge for the
+                        // width of the shoulder hides water `below` metres down
+                        // out to RoadEdge(E + below)/E; if the near shore is
+                        // inside that, the rider is looking at a bank.
+                        float nearShore = lake.RoadGap -
+                            RadiusAt(lake, Mathf.Atan2(-lake.RoadDir.y, -lake.RoadDir.x));
+                        float shadow = RoadEdge * (EyeHeight + below) / EyeHeight;
+                        if (nearShore < shadow * 1.05f) { rShadow++; continue; }
+
+                        // And the ring outside the waterline must not tower over
+                        // it. Without this the planner would sink a lake into a
+                        // mountainside and let the carve take 200 m off the slope
+                        // to make room, which is where the cliffs came from.
+                        if (ShoreRise(s, heights, res, texel, lake) > MaxShoreRise)
+                        { rWall++; continue; }
                         if (!Holds(s, heights, res, texel, lake)) { rHolds++; continue; }
                         // And the slope between road and water must actually fall
                         // away, with no intervening ridge. This is the test the
@@ -249,23 +347,91 @@ namespace KickrWorld
 
                         held++;
                         found.Add(lake);
+                        placedHere = true;
                         break;
                     }
+                    }
 
-                    if (found.Count >= wanted) break;
+                    if (placedHere || found.Count >= wanted) break;
                 }
             }
 
             Debug.Log($"[LakeGen] {found.Count} lake(s) from {level} level stretches. " +
                       $"Rejected: {rBounds} off map, {rOverlap} overlapping, {rRoad} too near road, " +
                       $"{rBasin} unsampleable, {rDrop} wrong depth below road, {rCut} too much rock, " +
-                      $"{rHolds} would not hold, {rView} out of sight");
+                      $"{rHolds} would not hold, {rView} out of sight, " +
+                      $"{rShadow} in the shoulder's shadow, {rWall} walled in, " +
+                      $"{rDeep} floored below the surface");
+            foreach (var l in found) Transect(s, heights, res, texel, route, l);
             foreach (var l in found)
                 Debug.Log($"[LakeGen]   {l.HalfLength * 2f:F0} x {l.HalfWidth * 2f:F0} m at " +
                           $"({l.Centre.x:F0}, {l.Centre.y:F0}), surface {l.WaterLevel:F0} m, " +
                           $"{l.RoadDistance:F0} m from the road at km {l.RouteDistance / 1000f:F1}, " +
                           $"road relief {l.RoadRelief:F1} m");
             return found;
+        }
+
+        /// <summary>How far the natural ground just outside the waterline stands
+        /// above it, at the 80th percentile so one spike does not condemn a
+        /// site.</summary>
+        static float ShoreRise(WorldSettings s, float[,] heights, int res, float texel,
+                               LakeSite lake)
+        {
+            var rises = new List<float>(32);
+            for (int i = 0; i < 32; i++)
+            {
+                float a = i / 32f * Mathf.PI * 2f;
+                float r = RadiusAt(lake, a) + ShoreBand * 0.5f;
+                float wx = lake.Centre.x + Mathf.Cos(a) * r;
+                float wz = lake.Centre.y + Mathf.Sin(a) * r;
+                int xi = Mathf.RoundToInt(wx / texel), zi = Mathf.RoundToInt(wz / texel);
+                if (xi < 0 || zi < 0 || xi >= res || zi >= res) continue;
+                rises.Add(heights[zi, xi] * s.TerrainHeight - lake.WaterLevel);
+            }
+            if (rises.Count == 0) return float.MaxValue;
+            rises.Sort();
+            return rises[Mathf.Min(rises.Count - 1, Mathf.RoundToInt(rises.Count * 0.8f))];
+        }
+
+        /// <summary>
+        /// Ground height every 10 m from the road to the far shore, against the
+        /// waterline. A lake can be the right size, in the right place, beside
+        /// the road, and still be invisible for want of one ridge in between --
+        /// and no overhead view will ever show that. This prints the section.
+        /// </summary>
+        static void Transect(WorldSettings s, float[,] heights, int res, float texel,
+                             RoutePath route, LakeSite lake)
+        {
+            Vector3 road = route.PositionAt(lake.RouteDistance);
+            var from = new Vector2(road.x, road.z);
+            Vector2 to = lake.Centre + (lake.Centre - from).normalized * lake.HalfWidth;
+            float span = Vector2.Distance(from, to);
+            int steps = Mathf.Clamp(Mathf.RoundToInt(span / 10f), 4, 60);
+
+            var sb = new System.Text.StringBuilder();
+            float worst = float.MinValue; float worstAt = 0f;
+            for (int i = 0; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                Vector2 p = Vector2.Lerp(from, to, t);
+                int xi = Mathf.Clamp(Mathf.RoundToInt(p.x / texel), 0, res - 1);
+                int zi = Mathf.Clamp(Mathf.RoundToInt(p.y / texel), 0, res - 1);
+                float g = CarvedHeight(lake, p.x, p.y, heights[zi, xi] * s.TerrainHeight);
+                float rel = g - lake.WaterLevel;
+                if (i > 0 && rel > worst) { worst = rel; worstAt = t * span; }
+                if (i % 2 == 0) sb.Append($"{t * span:F0}m:{rel:+0;-0} ");
+            }
+
+            // Can a 2 m eye on the road see the waterline over that?  The ridge
+            // hides it when its angle above the eye beats the water's.
+            float eye = road.y + 2f - lake.WaterLevel;
+            bool blocked = worst > 0f && worstAt > 1f &&
+                           (worst - eye) / worstAt > -eye / Mathf.Max(1f, span);
+
+            Debug.Log($"[LakeGen]   section road->water, height above waterline: {sb}");
+            Debug.Log($"[LakeGen]   road is {eye:F0} m above the water, " +
+                      $"highest ground between is {worst:F0} m at {worstAt:F0} m out " +
+                      $"-- waterline {(blocked ? "HIDDEN behind it" : "clear")}");
         }
 
         /// <summary>
@@ -333,9 +499,9 @@ namespace KickrWorld
         /// have to remove to reach it.
         /// </summary>
         static bool Basin(WorldSettings s, float[,] heights, int res, float texel,
-                          LakeSite lake, out float median, out float high)
+                          LakeSite lake, out float median, out float high, out float low)
         {
-            median = high = 0f;
+            median = high = low = 0f;
             var samples = new List<float>(196);
             var axis = new Vector2(Mathf.Cos(lake.AxisAngle), Mathf.Sin(lake.AxisAngle));
             var perp = new Vector2(-axis.y, axis.x);
@@ -359,6 +525,7 @@ namespace KickrWorld
             // 90th percentile rather than the maximum, so one noise spike cannot
             // veto an otherwise good basin.
             high = samples[Mathf.Min(samples.Count - 1, (samples.Count * 9) / 10)];
+            low = samples[samples.Count / 10];
             return true;
         }
 
@@ -402,7 +569,18 @@ namespace KickrWorld
             float dx = wx - lake.Centre.x, dz = wz - lake.Centre.y;
             float d = Mathf.Sqrt(dx * dx + dz * dz);
             float edge = RadiusAt(lake, Mathf.Atan2(dz, dx));
-            if (d > edge + ShoreBand) return orig;
+
+            // How squarely this bearing faces the road. The near shore is graded
+            // right back to the tarmac so there is no lip to hide behind; the far
+            // shore keeps its short band and runs up whatever is behind it.
+            float facing = 0f;
+            if (d > 0.001f && lake.RoadDir.sqrMagnitude > 0.5f)
+                facing = Mathf.Clamp01(
+                    (Vector2.Dot(new Vector2(dx, dz) / d, lake.RoadDir) - 0.15f) / 0.85f);
+
+            float roomToRoad = Mathf.Max(0f, lake.RoadGap - edge - RoadEdge);
+            float band = Mathf.Lerp(ShoreBand, Mathf.Max(ShoreBand, roomToRoad), facing);
+            if (d > edge + band) return orig;
 
             if (d <= edge)
             {
@@ -417,18 +595,88 @@ namespace KickrWorld
                 return Mathf.Min(orig, bed);
             }
 
-            float u = (d - edge) / ShoreBand;
+            float u = (d - edge) / band;
             float sm = u * u * (3f - 2f * u);
             // The rim starts AT water level and rises from there. Starting it
             // higher walls off the waterline and hides the very edge that makes
-            // the lake read as water.
+            // the lake read as water -- and on the road side there is no rim at
+            // all, because a bank thrown up between the rider and the water is
+            // the whole problem restated.
             float rim = lake.WaterLevel +
-                        BankHeight * Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(u / 0.5f));
-            return Mathf.Lerp(rim, orig, sm);
+                        BankHeight * Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(u / 0.5f))
+                        * (1f - facing);
+            float graded = Mathf.Lerp(rim, orig, sm);
+
+            // Toward the road, only ever cut. Filling here would rebuild the lip
+            // the grading exists to remove.
+            return facing > 0.001f ? Mathf.Min(orig, graded) : graded;
+        }
+
+        /// <summary>How far back along the road the shore is opened up.</summary>
+        const float ApproachLength = 360f;
+
+        /// <summary>
+        /// Walk the shoulder down between the road and the near shore, for the
+        /// length of the approach rather than only where the lake is squarely
+        /// abeam.
+        ///
+        /// Opening the section opposite the lake is not enough, and the reason is
+        /// simply where the rider is looking. Level with the water it is 90 deg
+        /// off the nose and out of frame entirely; the only time it can be seen
+        /// is on the way in, at a grazing angle -- and that sightline runs the
+        /// length of the shoulder, not across it. Carving one clean bowl and
+        /// leaving the approach untouched produced a lake that measured as
+        /// visible from 200 m back and rendered as a grass bank.
+        /// </summary>
+        static void OpenApproach(WorldSettings s, float[,] heights, int res, float texel,
+                                 RoutePath route, LakeSite lake)
+        {
+            float nearShore = lake.RoadGap -
+                RadiusAt(lake, Mathf.Atan2(-lake.RoadDir.y, -lake.RoadDir.x));
+            if (nearShore <= RoadEdge + 4f) return;
+
+            float step = Mathf.Max(texel * 0.5f, 2f);
+            int cut = 0;
+            for (float back = 0f; back <= ApproachLength; back += step)
+            {
+                float d = route.Wrap(lake.RouteDistance - back);
+                Vector3 p = route.PositionAt(d);
+                Vector3 f = route.ForwardAt(d, 8f);
+                var flat = new Vector2(p.x, p.z);
+                var perp = new Vector2(f.z, -f.x).normalized;
+                if (Vector2.Dot(perp, (lake.Centre - flat).normalized) < 0f) perp = -perp;
+
+                // Ease the cut out at the far end so the apron joins the hillside
+                // instead of stopping at a step.
+                float fade = 1f - Mathf.SmoothStep(0f, 1f,
+                    Mathf.InverseLerp(ApproachLength * 0.55f, ApproachLength, back));
+                if (fade <= 0.001f) continue;
+
+                for (float off = RoadEdge; off <= nearShore; off += step)
+                {
+                    Vector2 q = flat + perp * off;
+                    int xi = Mathf.RoundToInt(q.x / texel), zi = Mathf.RoundToInt(q.y / texel);
+                    if (xi < 0 || zi < 0 || xi >= res || zi >= res) continue;
+
+                    float orig = heights[zi, xi] * s.TerrainHeight;
+                    // A ramp from the tarmac edge, where it takes nothing, down to
+                    // the waterline at the shore.
+                    float t = Mathf.InverseLerp(RoadEdge, nearShore, off);
+                    float ramp = Mathf.Lerp(p.y, lake.WaterLevel, t * t * (3f - 2f * t));
+                    float target = Mathf.Lerp(orig, ramp, fade);
+                    if (target >= orig) continue;
+
+                    heights[zi, xi] = Mathf.Clamp01(target / s.TerrainHeight);
+                    cut++;
+                }
+            }
+            Debug.Log($"[LakeGen]   opened the approach: {cut} samples over " +
+                      $"{ApproachLength:F0} m out to a shore {nearShore:F0} m from the road");
         }
 
         /// <summary>Cut the basins into the heightmap, before it reaches Unity.</summary>
-        public static void Carve(WorldSettings s, float[,] heights, List<LakeSite> lakes)
+        public static void Carve(WorldSettings s, float[,] heights, List<LakeSite> lakes,
+                                 RoutePath route = null)
         {
             if (lakes == null || lakes.Count == 0) return;
 
@@ -461,6 +709,7 @@ namespace KickrWorld
 
                 Debug.Log($"[LakeGen] carved {touched} samples, deepest cut {deepest:F1} m, " +
                           $"surface {lake.WaterLevel:F0} m");
+                if (route != null) OpenApproach(s, heights, res, texel, route, lake);
             }
         }
 
