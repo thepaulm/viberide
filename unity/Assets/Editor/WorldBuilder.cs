@@ -242,6 +242,12 @@ namespace KickrWorld.EditorTools
             regen.Statue = statue;
             shot.Statue = statue;
 
+            var volcano = world.AddComponent<Volcano>();
+            volcano.World = rideWorld;
+            volcano.Terrain = terrain;
+            regen.Volcano = volcano;
+            shot.Volcano = volcano;
+
             var water = world.AddComponent<LakeSurfaces>();
             water.Terrain = terrain;
             AssignBoatModels(water);
@@ -250,6 +256,10 @@ namespace KickrWorld.EditorTools
             // The baked terrain already holds the carved basins; the water and
             // boats for them are built at startup from this stored list.
             water.SetSites(lakes, settings.Seed);
+
+            EnsureAlwaysIncludedShaders(
+                "Legacy Shaders/Particles/Additive",
+                "Legacy Shaders/Particles/Alpha Blended Premultiply");
 
             BuildLighting();
             AssertNoMissingScripts();
@@ -866,5 +876,42 @@ namespace KickrWorld.EditorTools
                 EditorApplication.Exit(1);
             }
         }
+
+        /// <summary>
+        /// Keep the particle shaders in the player.
+        ///
+        /// Shader.Find only sees what the build actually contains, and a shader
+        /// referenced solely from code created at runtime is in nothing's
+        /// dependency graph -- so the volcano's materials silently fell back to
+        /// Sprites/Default and the eruption rendered as flat grey squares. There
+        /// is no warning for this; the only sign is the shader name coming back
+        /// wrong from a diagnostic.
+        /// </summary>
+        static void EnsureAlwaysIncludedShaders(params string[] names)
+        {
+            var asset = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/GraphicsSettings.asset");
+            if (asset == null || asset.Length == 0) return;
+            var so = new SerializedObject(asset[0]);
+            var list = so.FindProperty("m_AlwaysIncludedShaders");
+            if (list == null) return;
+
+            foreach (var name in names)
+            {
+                var shader = Shader.Find(name);
+                if (shader == null) { Debug.LogWarning($"[WorldBuilder]   no shader '{name}'"); continue; }
+
+                bool present = false;
+                for (int i = 0; i < list.arraySize; i++)
+                    if (list.GetArrayElementAtIndex(i).objectReferenceValue == shader) { present = true; break; }
+                if (present) continue;
+
+                list.InsertArrayElementAtIndex(list.arraySize);
+                list.GetArrayElementAtIndex(list.arraySize - 1).objectReferenceValue = shader;
+                Debug.Log($"[WorldBuilder]   always-include shader {name}");
+            }
+            so.ApplyModifiedProperties();
+            AssetDatabase.SaveAssets();
+        }
+
     }
 }

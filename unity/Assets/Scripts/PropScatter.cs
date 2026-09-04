@@ -233,7 +233,7 @@ namespace KickrWorld
                         // otherwise creep onto the tarmac one house at a time.
                         if (Vector2.Distance(spot, centre) < kind.MinOffset * 0.8f) continue;
                         var template = variants[rng.Next(variants.Count)];
-                        if (TryPlace(template, kind, spot, rng))
+                        if (TryPlace(template, kind, spot, centre, rng))
                         {
                             placed++; placedForKind++;
                             if (!PlacedAt.TryGetValue(kind.Name, out var list))
@@ -248,12 +248,14 @@ namespace KickrWorld
 
             Placed = placed;
             Debug.Log($"[PropScatter] animation: {_animated} playing, " +
+                      $"{_walking} of them on the move, " +
                       $"{_noComponent} without an Animation component, {_noIdle} without an idle clip");
-            _animated = _noComponent = _noIdle = 0;
+            _animated = _noComponent = _noIdle = _walking = 0;
             Debug.Log($"[PropScatter] placed {placed} objects across {Kinds.Count} kinds (seed {seed})");
         }
 
-        bool TryPlace(GameObject template, PropKind kind, Vector2 spot, System.Random rng)
+        bool TryPlace(GameObject template, PropKind kind, Vector2 spot, Vector2 roadPoint,
+                      System.Random rng)
         {
             var tp = Terrain.transform.position;
             var data = Terrain.terrainData;
@@ -315,7 +317,7 @@ namespace KickrWorld
                 : Quaternion.Euler(0f, yaw, 0f);
 
             go.transform.localScale = template.transform.localScale * s;
-            Animate(go, rng);
+            Animate(go, kind, roadPoint, rng);
             return true;
         }
 
@@ -337,7 +339,7 @@ namespace KickrWorld
         /// of animal blinking in perfect unison reads as a screensaver rather
         /// than as wildlife.
         /// </summary>
-        static int _animated, _noComponent, _noIdle;
+        static int _animated, _noComponent, _noIdle, _walking;
 
         // One sample instance, kept only so -animdebug can watch whether its
         // clip time actually advances. Pixel diffing could not answer that:
@@ -368,37 +370,64 @@ namespace KickrWorld
                       $"weight={st.weight:F2}");
         }
 
-        static void Animate(GameObject go, System.Random rng)
+        static AnimationClip FindClip(Animation anim, string word)
+        {
+            foreach (AnimationState state in anim)
+                if (state.clip != null &&
+                    state.name.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return state.clip;
+            return null;
+        }
+
+        static void Animate(GameObject go, PropKind kind, Vector2 roadPoint, System.Random rng)
         {
             var anim = go.GetComponentInChildren<Animation>(true);
             if (anim == null) { _noComponent++; return; }
 
-            AnimationClip idle = null;
-            foreach (AnimationState state in anim)
-            {
-                if (state.clip == null) continue;
-                if (state.name.IndexOf("idle", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    idle = state.clip;
-                    break;
-                }
-            }
+            AnimationClip idle = FindClip(anim, "idle");
             if (idle == null) { _noIdle++; return; }
 
-            anim.clip = idle;
+            // Most of a herd is standing about; a few are on the move. All of
+            // them walking looks like a migration, and none of them walking is
+            // what this looked like before.
+            float roll = (float)rng.NextDouble();
+            AnimationClip walk = roll < 0.42f ? FindClip(anim, "walk")
+                               : roll < 0.54f ? FindClip(anim, "run")
+                               : null;
+            bool running = walk != null && roll >= 0.42f;
+            AnimationClip clip = walk != null ? walk : idle;
+
+            anim.clip = clip;
             anim.wrapMode = WrapMode.Loop;
             // Skinned meshes are the expensive part of this world, and there are
             // dozens of them. Unity will skip the sampling entirely for any whose
             // renderers are off screen, which costs nothing to ask for.
             anim.cullingType = AnimationCullingType.BasedOnRenderers;
 
-            anim.Play(idle.name);
-            var playing = anim[idle.name];
+            anim.Play(clip.name);
+            var playing = anim[clip.name];
             playing.wrapMode = WrapMode.Loop;
             playing.speed = 0.85f + (float)rng.NextDouble() * 0.3f;
             // Start each one somewhere different in the cycle.
-            playing.time = (float)rng.NextDouble() * idle.length;
+            playing.time = (float)rng.NextDouble() * clip.length;
             _animated++;
+
+            if (walk == null) return;
+
+            // Ground speed from the stride, so the feet do not skate: one cycle
+            // carries the animal about half its own height at a walk and rather
+            // more at a run. Getting this wrong is worse than standing still --
+            // a sliding dinosaur reads as a bug, a stationary one reads as a
+            // dinosaur having a rest.
+            float height = kind.TargetHeight > 0.01f ? kind.TargetHeight : 3f;
+            float stride = height * (running ? 0.9f : 0.55f);
+            var wander = go.AddComponent<PropWander>();
+            wander.Speed = stride / Mathf.Max(0.2f, clip.length) * playing.speed;
+            wander.Home = go.transform.position;
+            wander.RoadAnchor = new Vector3(roadPoint.x, go.transform.position.y, roadPoint.y);
+            wander.MinRoadDistance = Mathf.Max(18f, kind.MinOffset * 0.8f);
+            wander.Radius = running ? 40f : 26f;
+            _walking++;
 
             if (_probeAnim == null)
             {

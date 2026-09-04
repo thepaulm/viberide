@@ -21,6 +21,7 @@ namespace KickrWorld
         public BikeRider Rider;
         public PropScatter Scatter;
         public HilltopStatue Statue;
+        public Volcano Volcano;
         public LakeSurfaces Water;
 
         [Tooltip("Heightmap rows per frame. Lower is smoother but slower overall.")]
@@ -246,6 +247,15 @@ namespace KickrWorld
                 Stage = "Raising the monument";
                 yield return null;
                 Statue.Rebuild(route, seed);
+            }
+
+            if (Volcano != null)
+            {
+                // Same reason as the monument: the peak search reads the live
+                // Terrain, so it has to run after the heights are in.
+                Stage = "Waking the volcano";
+                yield return null;
+                Volcano.Rebuild(route, seed);
             }
 
             // A new world is a new ride: distance, climbing and clock all restart.

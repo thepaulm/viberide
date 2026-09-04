@@ -26,6 +26,7 @@ namespace KickrWorld
         public PlaneFlyby Flyby;
         public HilltopStatue Statue;
         public LakeSurfaces Water;
+        public Volcano Volcano;
 
         void Start() => StartCoroutine(Run());
 
@@ -100,6 +101,25 @@ namespace KickrWorld
                     Debug.LogWarning($"[AutoScreenshot] lake {which} has no clear view");
             }
 
+            // -startnearvolcano [n] stands the rider on the stretch of road the
+            // plume is best seen from, backed off so it is ahead rather than
+            // overhead.
+            if (Flag("-startnearvolcano") && Volcano != null && Volcano.Count > 0 &&
+                Statue != null && Statue.World != null && Statue.World.Route != null)
+            {
+                var route = Statue.World.Route;
+                int which = Mathf.Clamp(Mathf.RoundToInt(Num("-startnearvolcano", 0f)),
+                                        0, Volcano.Count - 1);
+                // Ask the volcano where it can be seen from rather than
+                // standing at the nearest point of road and hoping.
+                if (Volcano.TryBestView(route, which, out float view))
+                {
+                    startDistance = view;
+                    Debug.Log($"[AutoScreenshot] volcano {which} best seen from km {view / 1000f:F1}");
+                }
+                else Debug.LogWarning($"[AutoScreenshot] volcano {which} has no clear view");
+            }
+
             if (startDistance >= 0f && Rider != null)
             {
                 Rider.Jump(startDistance);
@@ -112,7 +132,8 @@ namespace KickrWorld
             // 90 m of drift over a five second delay, enough to swing the subject
             // from mid-frame to behind the stat bar.
             if (Rider != null && (Flag("-holdstill") || Flag("-startnearstatue") ||
-                                  Flag("-statueportrait") || Flag("-startnearlake")))
+                                  Flag("-statueportrait") || Flag("-startnearlake") ||
+                                  Flag("-startnearvolcano")))
                 Rider.Frozen = true;
 
             // Trigger a flyby only now that the rider is in place, with a short
@@ -149,6 +170,27 @@ namespace KickrWorld
             // statue portrait: it separates "does the water render and does the
             // basin look right" from "can you see it from the road", which are
             // different failures wanting different fixes.
+            if (Flag("-volcanoportrait") && Volcano != null && Volcano.Count > 0)
+            {
+                int which = Mathf.Clamp(Mathf.RoundToInt(Num("-volcanoportrait", 0f)),
+                                        0, Volcano.Count - 1);
+                Vector3 peak = Volcano.Peaks[which];
+                var cam = Camera.main;
+                var chase = cam != null ? cam.GetComponent<ChaseCamera>() : null;
+                if (chase != null) chase.enabled = false;
+                if (cam != null)
+                {
+                    float range = Num("-volcanorange", 900f);
+                    cam.transform.position = peak + new Vector3(-range * 0.8f, range * 0.35f, -range * 0.6f);
+                    cam.transform.LookAt(peak + Vector3.up * range * 0.25f);
+                    // The plume climbs for its whole 14 s life, so it can easily
+                    // top out past a far plane set for a bike ride.
+                    if (cam.farClipPlane < range * 4f) cam.farClipPlane = range * 4f;
+                    Debug.Log($"[AutoScreenshot] volcano portrait {which} from {range:F0} m, " +
+                              $"far clip {cam.farClipPlane:F0} m");
+                }
+            }
+
             if (Flag("-lakeportrait") && Water != null && Water.LakeCount > 0)
             {
                 int which = Mathf.Clamp(Mathf.RoundToInt(Num("-lakeportrait", 0f)),
@@ -211,6 +253,24 @@ namespace KickrWorld
                               $"depth {vp.z:F0} m, {(onScreen ? "ON SCREEN" : "off screen")}");
                 }
                 Debug.Log($"[AutoScreenshot] {Water.SurfaceReport()}");
+            }
+
+            if (Volcano != null && Volcano.Count > 0)
+            {
+                var cam = Camera.main;
+                for (int i = 0; i < Volcano.Count && cam != null; i++)
+                {
+                    Vector3 peak = Volcano.Peaks[i];
+                    Vector3 vp = cam.WorldToViewportPoint(peak);
+                    Vector3 vpTop = cam.WorldToViewportPoint(peak + Vector3.up * 260f);
+                    Vector3 to = peak - cam.transform.position;
+                    float flat = new Vector2(to.x, to.z).magnitude;
+                    Debug.Log($"[AutoScreenshot] volcano {i} summit viewport " +
+                              $"({vp.x:F2},{vp.y:F2}) plume top ({vpTop.x:F2},{vpTop.y:F2}) " +
+                              $"depth {vp.z:F0} m, {Mathf.Atan2(to.y, flat) * Mathf.Rad2Deg:F0} deg up, " +
+                              $"far clip {cam.farClipPlane:F0} m");
+                }
+                Debug.Log($"[AutoScreenshot] {Volcano.PlumeReport()}");
             }
 
             ScreenCapture.CaptureScreenshot(path);
